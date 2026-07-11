@@ -14,8 +14,15 @@ class ReferenceQualityService:
     def validate(self, spec: CompiledVideoSpec, result: RenderResult) -> list[str]:
         problems = list(self.media_quality_service.validate_video(result.video_path))
         problems.extend(self.media_quality_service.validate_content(result, len(spec.direction_cues)))
-        if not 20.0 <= result.duration_seconds <= 60.0:
-            problems.append(f"Duration {result.duration_seconds:.1f}s outside 20-60 second target")
+        if not 20.0 <= spec.transcript.duration_seconds <= 60.0:
+            problems.append(
+                f"Narration duration {spec.transcript.duration_seconds:.1f}s outside 20-60 second target"
+            )
+        if abs(result.duration_seconds - spec.total_duration_seconds) > 1.0 / spec.fps:
+            problems.append(
+                f"Final duration {result.duration_seconds:.3f}s does not match "
+                f"compiled duration {spec.total_duration_seconds:.3f}s"
+            )
         if spec.template != "reference_v1":
             problems.append("Reference render must use reference_v1")
         if any("tests/fixtures" in str(path).replace("\\", "/") for path in (spec.left_image, spec.right_image)):
@@ -37,6 +44,8 @@ class ReferenceQualityService:
     def _sfx_problems(spec: CompiledVideoSpec) -> list[str]:
         previous = -1.0
         for cue in spec.sound_cues:
+            if cue.kind.value == "cta_sting":
+                continue
             if cue.start < previous + 0.6:
                 return ["SFX cues are closer than 600 ms"]
             previous = cue.start

@@ -83,8 +83,10 @@ def test_reference_renderer_uses_white_canvas_and_local_product_focus(tmp_path: 
     assert renderer.product_scale_at(spec, 0.18, Focus.RIGHT) == 1.0
     assert renderer.mascot_x_at(spec, 0.09) < 540
     assert renderer.mascot_pivot_at(spec, 0.18) == (320.0, 1660.0)
+    assert not renderer.cta_visible_at(spec, 0.499)
+    assert renderer.cta_visible_at(spec, 0.5)
     assert frame.crop((120, 700, 960, 920)).getbbox() is not None
-    assert len(list(renderer.iter_frames(spec))) == math.ceil(0.5 * 30)
+    assert len(list(renderer.iter_frames(spec))) == math.ceil(2.3 * 30)
 
 
 def test_ffmpeg_raw_encoder_command_accepts_rgb_frame_pipe(tmp_path: Path) -> None:
@@ -138,7 +140,7 @@ def test_reference_render_service_streams_dynamic_frames_and_writes_artifacts(tm
     ffmpeg = FakeFFmpeg()
     result = ReferenceRenderService(renderer, ffmpeg).render(spec, tmp_path / "output")
 
-    assert ffmpeg.frames == 15
+    assert ffmpeg.frames == 69
     assert result.video_path.read_bytes() == b"final-video"
     assert result.poster_path.exists()
     assert result.contact_sheet_path.exists()

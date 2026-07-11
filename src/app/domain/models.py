@@ -354,12 +354,30 @@ class CompiledVideoSpec(BaseModel):
     direction_cues: list[AbsoluteDirectionCue] = Field(default_factory=list)
     sound_cues: list[SoundEffectCue] = Field(default_factory=list)
     captions: list[CaptionCue] = Field(default_factory=list)
+    narration_end_seconds: Optional[float] = Field(default=None, ge=0.0)
+    outro_duration_seconds: float = Field(default=1.8, ge=1.8, le=1.8)
     template: str = "reference_v1"
     mascot_set: str = "default"
     width: int = 1080
     height: int = 1920
     fps: int = 30
     cta_duration_seconds: float = 1.8
+
+    @model_validator(mode="after")
+    def compile_end_times(self) -> "CompiledVideoSpec":
+        if self.narration_end_seconds is None:
+            self.narration_end_seconds = self.transcript.duration_seconds
+        if self.narration_end_seconds < self.transcript.duration_seconds:
+            raise ValueError("narration_end_seconds cannot precede transcript duration")
+        return self
+
+    @property
+    def cta_start_seconds(self) -> float:
+        return float(self.narration_end_seconds or self.transcript.duration_seconds)
+
+    @property
+    def total_duration_seconds(self) -> float:
+        return self.cta_start_seconds + self.outro_duration_seconds
 
     @field_validator("left_image", "right_image", "narration_audio")
     @classmethod

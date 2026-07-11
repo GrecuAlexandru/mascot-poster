@@ -69,10 +69,17 @@ class BeatTTSService:
 
         output_path = output_dir / "narration.wav"
         self.audio_service.concatenate_with_silence(segments, output_path)
+        decoded_duration = (
+            self.audio_service.get_duration(output_path)
+            if hasattr(self.audio_service, "get_duration")
+            else offset
+        )
+        final_word_end = timed_words[-1].end if timed_words else 0.0
+        narration_end = max(offset, decoded_duration, final_word_end)
         transcript = TimedTranscript(
             words=timed_words,
             beats=timed_beats,
-            duration_seconds=round(offset, 3),
+            duration_seconds=round(narration_end, 3),
         )
         return output_path, transcript
 

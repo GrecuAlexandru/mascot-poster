@@ -77,6 +77,10 @@ class TimelineCompiler:
             ))
         absolute_cues.sort(key=lambda cue: cue.start)
         sound_cues = self._sound_cues(absolute_cues)
+        sound_cues.append(SoundEffectCue(
+            start=transcript.duration_seconds,
+            kind=SfxKind.CTA_STING,
+        ))
         return CompiledTimeline(
             direction_cues=absolute_cues,
             sound_cues=sound_cues,

@@ -200,15 +200,20 @@ class AudioService:
         cues: list[SoundEffectCue],
         library: dict,
         output_path: Path,
+        total_duration_seconds: Optional[float] = None,
     ) -> Path:
         narration_duration = self.ffmpeg.get_duration(narration_path)
         if narration_duration <= 0:
             raise ValueError(f"Invalid narration duration: {narration_duration}")
+        mix_duration = total_duration_seconds or narration_duration
+        if mix_duration < narration_duration:
+            raise ValueError("total_duration_seconds cannot be shorter than narration")
 
         inputs: list[str] = ["-i", str(narration_path)]
         filters = [
             f"[0:a]loudnorm=I=-16:TP=-1.5:LRA=11,"
-            f"aformat=sample_rates={self.sample_rate}:channel_layouts=stereo[narration]"
+            f"aformat=sample_rates={self.sample_rate}:channel_layouts=stereo,"
+            f"apad,atrim=duration={mix_duration:.3f}[narration]"
         ]
         mix_inputs = ["[narration]"]
         for index, cue in enumerate(cues):
@@ -222,7 +227,7 @@ class AudioService:
                 f"[{index + 1}:a]aresample={self.sample_rate},"
                 f"aformat=sample_rates={self.sample_rate}:channel_layouts=stereo,"
                 f"volume={cue.volume_db:.1f}dB,adelay={delay_ms}|{delay_ms},"
-                f"apad,atrim=duration={narration_duration:.3f}[{label}]"
+                f"apad,atrim=duration={mix_duration:.3f}[{label}]"
             )
             mix_inputs.append(f"[{label}]")
 
@@ -255,3 +260,6 @@ class AudioService:
         ]
         self.ffmpeg._run(cmd)
         return output_path
+
+    def get_duration(self, audio_path: Path) -> float:
+        return self.ffmpeg.get_duration(audio_path)

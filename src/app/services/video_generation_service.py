@@ -257,11 +257,14 @@ class VideoGenerationService:
                 timeline = self.timeline_compiler.compile(direction, transcript)
                 library = self.sfx_service.ensure_library(job_dir / "assets" / "sfx")
                 mixed_audio = job_dir / "audio" / "mixed_audio.m4a"
+                narration_end_seconds = transcript.duration_seconds
+                total_duration_seconds = narration_end_seconds + 1.8
                 self.audio_service.mix_timed_sfx(
                     narration_audio,
                     timeline.sound_cues,
                     library,
                     mixed_audio,
+                    total_duration_seconds=total_duration_seconds,
                 )
                 compiled = CompiledVideoSpec(
                     left_label=topic.comparison_left,
@@ -270,6 +273,7 @@ class VideoGenerationService:
                     right_image=right_image,
                     narration_audio=mixed_audio,
                     transcript=transcript,
+                    narration_end_seconds=narration_end_seconds,
                     direction_cues=timeline.direction_cues,
                     sound_cues=timeline.sound_cues,
                     captions=timeline.captions,

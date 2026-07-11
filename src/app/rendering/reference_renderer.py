@@ -51,14 +51,18 @@ class ReferenceRenderer:
         self._draw_label(draw, spec.right_label, self.template.region("right_label"))
         self._draw_caption(draw, self._caption_at(spec.captions, time_seconds))
         self._draw_mascot(canvas, spec, time_seconds)
-        if time_seconds >= max(0.0, spec.transcript.duration_seconds - spec.cta_duration_seconds):
+        if self.cta_visible_at(spec, time_seconds):
             self._draw_cta(draw)
         return canvas.convert("RGB")
 
     def iter_frames(self, spec: CompiledVideoSpec):
-        frame_count = max(1, math.ceil(spec.transcript.duration_seconds * spec.fps))
+        frame_count = max(1, math.ceil(spec.total_duration_seconds * spec.fps))
         for frame_index in range(frame_count):
             yield self.compose_frame(spec, frame_index / spec.fps)
+
+    @staticmethod
+    def cta_visible_at(spec: CompiledVideoSpec, time_seconds: float) -> bool:
+        return spec.cta_start_seconds <= time_seconds < spec.total_duration_seconds
 
     def product_scale_at(
         self,

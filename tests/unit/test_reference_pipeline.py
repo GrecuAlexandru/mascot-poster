@@ -175,6 +175,8 @@ def test_compiled_video_spec_requires_existing_media(tmp_path: Path) -> None:
 
     assert spec.template == "reference_v1"
     assert spec.fps == 30
+    assert spec.narration_end_seconds == pytest.approx(0.5)
+    assert spec.total_duration_seconds == pytest.approx(2.3)
 
     with pytest.raises(ValueError, match="left_image"):
         CompiledVideoSpec(
@@ -186,6 +188,32 @@ def test_compiled_video_spec_requires_existing_media(tmp_path: Path) -> None:
             transcript=transcript,
             direction_cues=[],
         )
+
+
+def test_compiled_video_spec_adds_outro_after_last_speech(tmp_path: Path) -> None:
+    left = tmp_path / "left.png"
+    right = tmp_path / "right.png"
+    audio = tmp_path / "narration.wav"
+    for path in (left, right, audio):
+        path.write_bytes(b"asset")
+    transcript = TimedTranscript(
+        words=[TimedWord(word="final", start=25.0, end=25.638)],
+        beats=[TimedBeat(id="closing", start=24.0, end=25.178, pause_end=25.678)],
+        duration_seconds=25.678,
+    )
+
+    spec = CompiledVideoSpec(
+        left_label="Coffee",
+        right_label="Tea",
+        left_image=left,
+        right_image=right,
+        narration_audio=audio,
+        transcript=transcript,
+        narration_end_seconds=25.678,
+    )
+
+    assert spec.cta_start_seconds == pytest.approx(25.678)
+    assert spec.total_duration_seconds == pytest.approx(27.478)
 
 
 def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
@@ -213,8 +241,8 @@ def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
         direction_path=paths["direction.json"],
         image_provenance_path=paths["provenance.json"],
         quality_report_path=paths["quality.json"],
-        duration_seconds=25.0,
-        frame_count=750,
+        duration_seconds=26.8,
+        frame_count=804,
         resolution=(1080, 1920),
         scene_count=5,
     )
@@ -310,6 +338,9 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
             output_path.write_bytes(b"joined")
             return output_path
 
+        def get_duration(self, audio_path):
+            return 14.2
+
     provider = FakeProvider()
     audio_service = FakeAudioService()
     service = BeatTTSService(provider, audio_service)
@@ -345,7 +376,7 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
     assert transcript.words[2].word == "trei"
     assert transcript.words[2].start == pytest.approx(2.3)
     assert transcript.beats[0].pause_end == pytest.approx(2.3)
-    assert transcript.duration_seconds == pytest.approx(13.8)
+    assert transcript.duration_seconds == pytest.approx(14.2)
     assert provider.calls[1]["previous_text"] == "unu doi."
 
 
@@ -399,11 +430,13 @@ def test_audio_service_delays_sfx_to_compiled_cue_time(tmp_path: Path) -> None:
         cues=[SoundEffectCue(start=1.2, kind=SfxKind.WHOOSH, volume_db=-18.0)],
         library={SfxKind.WHOOSH: whoosh},
         output_path=output,
+        total_duration_seconds=6.8,
     )
 
     command = service.ffmpeg._run.call_args.args[0]
     filter_graph = command[command.index("-filter_complex") + 1]
     assert "adelay=1200|1200" in filter_graph
+    assert "apad,atrim=duration=6.800" in filter_graph
     assert "loudnorm=I=-16" in filter_graph
     assert "alimiter=limit=0.841395" in filter_graph
 
@@ -467,7 +500,12 @@ def test_timeline_compiler_resolves_cues_and_debounces_sfx() -> None:
 
     assert isinstance(compiled, CompiledTimeline)
     assert [cue.start for cue in compiled.direction_cues] == [0.0, 0.4, 0.6]
-    assert [cue.kind for cue in compiled.sound_cues] == [SfxKind.WHOOSH, SfxKind.POSE_POP]
+    assert [cue.kind for cue in compiled.sound_cues] == [
+        SfxKind.WHOOSH,
+        SfxKind.POSE_POP,
+        SfxKind.CTA_STING,
+    ]
+    assert compiled.sound_cues[-1].start == pytest.approx(1.0)
 
 
 def test_timeline_compiler_rejects_director_word_anchor_outside_beat() -> None:
@@ -518,8 +556,8 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
         poster_path=poster,
         contact_sheet_path=contact,
         timeline_path=timeline,
-        duration_seconds=25.0,
-        frame_count=750,
+        duration_seconds=26.8,
+        frame_count=804,
         resolution=(1080, 1920),
         scene_count=0,
     )
@@ -534,5 +572,9 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
     quality = ReferenceQualityService(FakeMediaQuality())
 
     assert quality.validate(spec, result) == []
+    short_result = result.model_copy(update={"duration_seconds": 25.0})
+    assert quality.validate(spec, short_result) == [
+        "Final duration 25.000s does not match compiled duration 26.800s"
+    ]
     spec.captions[1].words[1] = "greșit"
     assert quality.validate(spec, result) == ["Caption active-word sequence does not match narration"]

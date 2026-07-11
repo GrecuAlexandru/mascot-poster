@@ -158,7 +158,14 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
             return {"item": item, "path": str(output_path), "source_type": "generated"}
 
     class Audio:
-        def mix_timed_sfx(self, narration_path, cues, library, output_path):
+        def mix_timed_sfx(
+            self,
+            narration_path,
+            cues,
+            library,
+            output_path,
+            total_duration_seconds=None,
+        ):
             output_path.write_bytes(narration_path.read_bytes())
             return output_path
 
@@ -180,7 +187,9 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
                 video_path=paths["video.mp4"], poster_path=paths["poster.jpg"],
                 contact_sheet_path=paths["sheet.jpg"], timeline_path=paths["timeline.json"],
                 transcript_path=paths["transcript.json"], direction_path=paths["direction.json"],
-                    duration_seconds=25.0, frame_count=750, resolution=(1080, 1920), scene_count=1,
+                        duration_seconds=spec.total_duration_seconds,
+                        frame_count=round(spec.total_duration_seconds * 30),
+                        resolution=(1080, 1920), scene_count=1,
             )
 
     class Quality:
@@ -289,7 +298,14 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
             return {"item": item, "path": str(output_path), "source_type": "generated"}
 
     class Audio:
-        def mix_timed_sfx(self, narration_path, cues, library, output_path):
+        def mix_timed_sfx(
+            self,
+            narration_path,
+            cues,
+            library,
+            output_path,
+            total_duration_seconds=None,
+        ):
             output_path.write_bytes(narration_path.read_bytes())
             return output_path
 
@@ -302,7 +318,7 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
             self.durations: list[float] = []
 
         def render(self, spec, output_dir):
-            self.durations.append(spec.transcript.duration_seconds)
+            self.durations.append(spec.total_duration_seconds)
             output_dir.mkdir(parents=True, exist_ok=True)
             paths = {name: output_dir / name for name in ("video.mp4", "poster.jpg", "sheet.jpg", "timeline.json")}
             for path in paths.values():
@@ -310,8 +326,8 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
             return RenderResult(
                 video_path=paths["video.mp4"], poster_path=paths["poster.jpg"],
                 contact_sheet_path=paths["sheet.jpg"], timeline_path=paths["timeline.json"],
-                duration_seconds=spec.transcript.duration_seconds,
-                frame_count=round(spec.transcript.duration_seconds * 30),
+                duration_seconds=spec.total_duration_seconds,
+                frame_count=round(spec.total_duration_seconds * 30),
                 resolution=(1080, 1920), scene_count=1,
             )
 
@@ -341,8 +357,8 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
 
     result = asyncio.run(service.generate(GenerationRequest(target_duration_seconds=25)))
 
-    assert result.render_result.duration_seconds == 24.0
+    assert result.render_result.duration_seconds == 25.8
     assert tts.calls == 2
     assert director.hooks == ["short"]
-    assert renderer.durations == [24.0]
+    assert renderer.durations == [25.8]
     assert "Measured narration duration was 61.0s" in script_writer.repair_notes[1][0]

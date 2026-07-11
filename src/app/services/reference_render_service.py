@@ -20,7 +20,7 @@ class ReferenceRenderService:
         output_dir.mkdir(parents=True, exist_ok=True)
         work_dir = output_dir / "_reference_work"
         work_dir.mkdir(exist_ok=True)
-        frame_count = max(1, math.ceil(spec.transcript.duration_seconds * spec.fps))
+        frame_count = max(1, math.ceil(spec.total_duration_seconds * spec.fps))
         capture_indexes = self._capture_indexes(spec, frame_count)
         captures: list[Image.Image] = []
 
@@ -78,7 +78,7 @@ class ReferenceRenderService:
             timeline_path=timeline_path,
             transcript_path=transcript_path,
             direction_path=direction_path,
-            duration_seconds=spec.transcript.duration_seconds,
+            duration_seconds=spec.total_duration_seconds,
             frame_count=frame_count,
             resolution=(spec.width, spec.height),
             scene_count=len(spec.direction_cues),
