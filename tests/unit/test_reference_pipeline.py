@@ -72,10 +72,47 @@ def test_reference_script_exposes_exact_spoken_text() -> None:
             NarrationBeat(id="b0", text="Cafeaua acționează rapid.", pause_after_ms=300),
             NarrationBeat(id="b1", text="Ceaiul este mai blând.", pause_after_ms=0),
         ],
+        closing=NarrationBeat(
+            id="closing",
+            text="Așadar, alege băutura care se potrivește mai bine nevoilor tale.",
+            pause_after_ms=500,
+        ),
         caption="Cafea sau ceai?",
     )
 
-    assert script.narration_text == "Cafeaua acționează rapid. Ceaiul este mai blând."
+    assert script.narration_text.endswith("mai bine nevoilor tale.")
+
+
+def test_reference_script_rejects_fragmentary_closing() -> None:
+    with pytest.raises(ValueError, match="closing"):
+        ReferenceScriptPackage(
+            title="Cafea vs ceai",
+            left_item="Cafea",
+            right_item="Ceai",
+            hook="Diferența contează",
+            beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+            closing=NarrationBeat(id="b8", text="Un fragment", pause_after_ms=0),
+            caption="Cafea sau ceai?",
+        )
+
+
+def test_reference_script_all_beats_ends_with_conclusive_closing() -> None:
+    script = ReferenceScriptPackage(
+        title="Cafea vs ceai",
+        left_item="Cafea",
+        right_item="Ceai",
+        hook="Diferența contează",
+        beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+        closing=NarrationBeat(
+            id="closing",
+            text="Așadar, alege varianta care se potrivește mai bine nevoilor tale.",
+            pause_after_ms=500,
+        ),
+        caption="Cafea sau ceai?",
+    )
+
+    assert script.all_beats[-1].id == "closing"
+    assert script.narration_text.endswith("nevoilor tale.")
 
 
 def test_timed_transcript_rejects_overlapping_words() -> None:
@@ -285,6 +322,11 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
             NarrationBeat(id="b0", text="unu doi.", pause_after_ms=300),
             NarrationBeat(id="b1", text="trei patru.", pause_after_ms=0),
         ],
+        closing=NarrationBeat(
+            id="closing",
+            text="Așadar, concluzia este simplă pentru alegerea ta de astăzi.",
+            pause_after_ms=500,
+        ),
         caption="Caption",
     )
 
@@ -299,11 +341,11 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
     )
 
     assert audio_path.read_bytes() == b"joined"
-    assert [pause for _, pause in audio_service.segments] == [300, 0]
+    assert [pause for _, pause in audio_service.segments] == [300, 0, 500]
     assert transcript.words[2].word == "trei"
     assert transcript.words[2].start == pytest.approx(2.3)
     assert transcript.beats[0].pause_end == pytest.approx(2.3)
-    assert transcript.duration_seconds == pytest.approx(4.3)
+    assert transcript.duration_seconds == pytest.approx(13.8)
     assert provider.calls[1]["previous_text"] == "unu doi."
 
 

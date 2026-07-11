@@ -43,6 +43,11 @@ def test_reference_script_service_requests_romanian_beat_schema() -> None:
                 right_item="Ceai",
                 hook="Diferența începe aici.",
                 beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+                closing=NarrationBeat(
+                    id="closing",
+                    text="Așadar, alege opțiunea care se potrivește mai bine nevoilor tale.",
+                    pause_after_ms=500,
+                ),
                 caption="Cafea sau ceai?",
             )
 
@@ -76,6 +81,11 @@ def test_reference_direction_service_returns_word_anchored_cues() -> None:
         right_item="Ceai",
         hook="Hook",
         beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+        closing=NarrationBeat(
+            id="closing",
+            text="Așadar, alege opțiunea care se potrivește mai bine nevoilor tale.",
+            pause_after_ms=500,
+        ),
         caption="Cafea sau ceai?",
     )
 
@@ -106,6 +116,11 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
                 right_item=topic.comparison_right,
                 hook="Hook",
                 beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+                closing=NarrationBeat(
+                    id="closing",
+                    text="Așadar, alege opțiunea care se potrivește mai bine nevoilor tale.",
+                    pause_after_ms=500,
+                ),
                 caption="Cafea sau ceai?",
             )
 
@@ -228,6 +243,11 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
                     id="b0",
                     text=" ".join(["word"] * (40 if long_script else 30)),
                 )],
+                closing=NarrationBeat(
+                    id="closing",
+                    text="Therefore, choose the option that best fits your current needs.",
+                    pause_after_ms=500,
+                ),
                 caption="Coffee or tea?",
             )
 

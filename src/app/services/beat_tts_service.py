@@ -33,7 +33,7 @@ class BeatTTSService:
         offset = 0.0
         previous_text = ""
 
-        for index, beat in enumerate(script.beats):
+        for index, beat in enumerate(script.all_beats):
             segment_path = output_dir / f"beat_{index:02d}.mp3"
             result = await self.provider.synthesize(
                 text=beat.text,

@@ -14,7 +14,7 @@ class ReferenceDirectionService:
         language: str,
     ) -> DirectionPlan:
         beat_lines = []
-        for beat in script.beats:
+        for beat in script.all_beats:
             words = beat.text.split()
             indexed = ", ".join(f"{index}:{word}" for index, word in enumerate(words))
             beat_lines.append(f"{beat.id}: {indexed}")

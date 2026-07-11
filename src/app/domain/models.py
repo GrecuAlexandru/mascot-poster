@@ -72,13 +72,31 @@ class ReferenceScriptPackage(BaseModel):
     right_item: str
     hook: str
     beats: list[NarrationBeat] = Field(min_length=1)
+    closing: NarrationBeat
     caption: str
     hashtags: list[str] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_closing(self) -> "ReferenceScriptPackage":
+        words = self.closing.text.split()
+        if self.closing.id != "closing":
+            raise ValueError("closing beat id must be 'closing'")
+        if self.closing.pause_after_ms not in (500, 750):
+            raise ValueError("closing pause must be 500 or 750 ms")
+        if not 6 <= len(words) <= 28:
+            raise ValueError("closing must contain 6-28 words")
+        if not self.closing.text.endswith((".", "!", "?")):
+            raise ValueError("closing must be a complete sentence")
+        return self
+
+    @property
+    def all_beats(self) -> list[NarrationBeat]:
+        return [*self.beats, self.closing]
+
     @property
     def narration_text(self) -> str:
-        return " ".join(beat.text for beat in self.beats)
+        return " ".join(beat.text for beat in self.all_beats)
 
     @property
     def word_count(self) -> int:
