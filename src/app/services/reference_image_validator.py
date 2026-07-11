@@ -64,6 +64,9 @@ class ReferenceImageValidator:
             (
                 "The first image is left and the second is right. Confirm both exact identities, "
                 "clear visual distinction, matching angle, scale, crop, lighting and background. "
+                "Accept only transparent or plain-white backgrounds; reject black, dark, scenic, or "
+                "mismatched backgrounds. Reject a component or close-up detail when the brief requests "
+                "a complete subject. "
                 f"Paired brief: {brief.model_dump_json()}"
             ),
             [left_path, right_path],

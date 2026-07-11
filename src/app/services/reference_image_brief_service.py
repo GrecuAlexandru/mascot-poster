@@ -25,7 +25,10 @@ class ReferenceImageBriefService:
             "matching object scale and crop, neutral studio lighting, centered full-object framing, "
             "and transparent background. Explicitly prohibit logos, watermarks, unrelated text, "
             "cropped edges, and the other item's defining attributes. Packaging and text should be "
-            "false unless they are essential to identify a branded product."
+            "false unless they are essential to identify a branded product. For vehicles, appliances, "
+            "or complex systems, select a complete, matching context view that visibly proves the "
+            "comparison difference; never substitute an isolated control or component unless the topic "
+            "itself compares that component."
         )
         result = await self.llm.complete_structured(
             system,

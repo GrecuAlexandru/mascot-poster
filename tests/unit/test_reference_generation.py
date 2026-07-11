@@ -12,6 +12,8 @@ from app.domain.models import (
     DirectionCue,
     DirectionPlan,
     NarrationBeat,
+    PairedImageBrief,
+    ProductImageBrief,
     ReferenceScriptPackage,
     ResearchPackage,
     GenerationRequest,
@@ -23,6 +25,7 @@ from app.domain.models import (
 )
 from app.services.reference_direction_service import ReferenceDirectionService
 from app.services.reference_script_service import ReferenceScriptService
+from app.services.reference_image_validator import ImageValidationResult
 from app.services.timeline_compiler import TimelineCompiler
 from app.services.video_generation_service import VideoGenerationService
 
@@ -143,6 +146,78 @@ def test_direction_service_replaces_all_neutral_anchor_travel() -> None:
         sum(candidate.beat_id == beat.id for candidate in result.cues)
         for beat in script.all_beats
     ) <= 2
+
+
+def test_pair_repair_regenerates_both_images_with_pair_feedback(tmp_path: Path) -> None:
+    class Images:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict]] = []
+
+        async def acquire(self, item, output_path, **kwargs):
+            self.calls.append((item, kwargs))
+            Image.new("RGBA", (400, 400), (255, 255, 255, 0)).save(output_path)
+            return {"item": item, "path": str(output_path)}
+
+    class Validator:
+        async def validate_pair(self, left_path, right_path, brief):
+            return ImageValidationResult(
+                depicts_requested_item=True,
+                distinguishing_attributes_present=True,
+                contains_logo_or_prominent_text=False,
+                contains_prohibited_content=False,
+                background_acceptable=True,
+                pair_style_acceptable=True,
+                confidence=0.95,
+            )
+
+    brief = PairedImageBrief(
+        shared_style="matching front cabin view on transparent background",
+        left=ProductImageBrief(
+            item="Manual car",
+            exact_subject="complete manual-transmission car cockpit",
+            distinguishing_attributes=["clutch pedal"],
+        ),
+        right=ProductImageBrief(
+            item="Automatic car",
+            exact_subject="complete automatic-transmission car cockpit",
+            distinguishing_attributes=["no clutch pedal"],
+        ),
+    )
+    images = Images()
+    service = VideoGenerationService(
+        output_base=tmp_path,
+        topic_generator=None,
+        researcher=None,
+        script_writer=None,
+        verifier=None,
+        director=None,
+        beat_tts=None,
+        image_service=images,
+        audio_service=None,
+        sfx_service=None,
+        timeline_compiler=None,
+        renderer=None,
+        quality_service=None,
+        image_validator=Validator(),
+    )
+    topic = TopicSpec(
+        title="Manual vs automatic", comparison_left="Manual car", comparison_right="Automatic car"
+    )
+
+    left, right, validation = asyncio.run(service._regenerate_pair_images(
+        topic,
+        tmp_path / "left.png",
+        tmp_path / "right.png",
+        brief,
+        ["left image is a gear knob, not a car"],
+    ))
+
+    assert [item for item, _ in images.calls] == ["Manual car", "Automatic car"]
+    assert all(call["force_generated"] is True for _, call in images.calls)
+    assert all("gear knob" in call["prior_rejections"][0] for _, call in images.calls)
+    assert left["item"] == "Manual car"
+    assert right["item"] == "Automatic car"
+    assert validation.accepted
 
 
 def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> None:

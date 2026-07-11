@@ -210,6 +210,7 @@ def test_generated_prompt_contains_identity_pair_style_and_negatives() -> None:
     assert "same three-quarter camera angle" in prompt
     assert "no logo" in prompt
     assert "not whole-wheat bread" in prompt
+    assert "Do not replace the complete subject" in prompt
 
 
 def test_multimodal_request_contains_png_data_url(tmp_path: Path) -> None:

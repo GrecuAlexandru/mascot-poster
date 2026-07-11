@@ -209,18 +209,14 @@ class VideoGenerationService:
                         paired_brief,
                     )
                     if not pair_validation.accepted:
-                        right_provenance = await self.image_service.acquire(
-                            topic.comparison_right,
-                            right_image,
-                            brief=paired_brief.right,
-                            shared_style=paired_brief.shared_style,
-                            prior_rejections=pair_validation.rejection_reasons,
-                            force_generated=True,
-                        )
-                        pair_validation = await self.image_validator.validate_pair(
-                            left_image,
-                            right_image,
-                            paired_brief,
+                        left_provenance, right_provenance, pair_validation = (
+                            await self._regenerate_pair_images(
+                                topic,
+                                left_image,
+                                right_image,
+                                paired_brief,
+                                pair_validation.rejection_reasons,
+                            )
                         )
                     if not pair_validation.accepted:
                         raise RuntimeError(
@@ -452,6 +448,41 @@ class VideoGenerationService:
             brief=brief,
             shared_style=shared_style,
         )
+
+    async def _regenerate_pair_images(
+        self,
+        topic: TopicSpec,
+        left_path: Path,
+        right_path: Path,
+        brief: Any,
+        rejection_reasons: list[str],
+    ) -> tuple[Any, Any, Any]:
+        left_provenance, right_provenance = await asyncio.gather(
+            self.image_service.acquire(
+                topic.comparison_left,
+                left_path,
+                brief=brief.left,
+                shared_style=brief.shared_style,
+                prior_rejections=rejection_reasons,
+                force_generated=True,
+            ),
+            self.image_service.acquire(
+                topic.comparison_right,
+                right_path,
+                brief=brief.right,
+                shared_style=brief.shared_style,
+                prior_rejections=rejection_reasons,
+                force_generated=True,
+            ),
+        )
+        if self.image_validator is None:
+            raise RuntimeError("Pair repair requires an image validator")
+        pair_validation = await self.image_validator.validate_pair(
+            left_path,
+            right_path,
+            brief,
+        )
+        return left_provenance, right_provenance, pair_validation
 
     async def _generate_verified_script(
         self,

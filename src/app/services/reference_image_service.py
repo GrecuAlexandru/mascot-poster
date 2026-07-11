@@ -283,6 +283,8 @@ class ReferenceImageService:
             f"It must visibly show: {attributes}. Required composition details: {required}. "
             f"Pair style: {shared_style}. The full subject must be centered and completely visible, "
             f"occupying about 72 percent of the canvas with clean transparent pixels to every edge. "
+            "Do not replace the complete subject with a detail, control, accessory, or one component "
+            "unless that detail is explicitly the requested subject. "
             f"Use even neutral studio lighting and realistic texture. "
             f"Negative constraints: {', '.join(negatives)}. Output a transparent PNG."
         )
