@@ -13,6 +13,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from app.config import get_settings
 from app.services.mascot_service import MascotService
+from app.services.mascot_calibration_service import MascotCalibrationService
 from app.rendering.coordinates import load_template
 from app.rendering.safe_zones import check_all_regions
 
@@ -52,6 +53,17 @@ def main() -> int:
         ok = False
     else:
         print("  All pose images valid (RGBA, correct size).")
+
+    try:
+        calibration = MascotCalibrationService(settings.mascots_dir).load()
+        print(
+            "  Pose calibration valid "
+            f"({len(calibration.poses)} poses, dot={calibration.reference_dot.x:.0f},"
+            f"{calibration.reference_dot.y:.0f})."
+        )
+    except Exception as error:
+        print(f"  CALIBRATION ERROR: {error}")
+        ok = False
 
     print()
     print("Validating template regions...")

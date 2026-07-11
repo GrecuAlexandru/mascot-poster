@@ -10,6 +10,7 @@ from app.domain.enums import Focus, MascotAnchor, MascotPose
 from app.domain.models import CaptionCue, CompiledVideoSpec
 from app.rendering.coordinates import Region, TemplateConfig, load_template
 from app.rendering.text_layout import load_font, measure_text
+from app.services.mascot_calibration_service import MascotCalibrationService, PoseCalibration
 
 
 class ReferenceRenderer:
@@ -24,6 +25,8 @@ class ReferenceRenderer:
         self.font_path = font_path
         self._images: dict[Path, Image.Image] = {}
         self._mascot_paths = self._load_mascot_paths()
+        self._calibration_service = MascotCalibrationService(mascots_dir)
+        self._calibration = self._calibration_service.load()
 
     def compose_frame(self, spec: CompiledVideoSpec, time_seconds: float) -> Image.Image:
         canvas = Image.new(
@@ -71,12 +74,23 @@ class ReferenceRenderer:
         return round(previous_scale + (target_scale - previous_scale) * eased, 4)
 
     def mascot_x_at(self, spec: CompiledVideoSpec, time_seconds: float) -> float:
+        return self.mascot_pivot_at(spec, time_seconds)[0]
+
+    def mascot_pivot_at(
+        self,
+        spec: CompiledVideoSpec,
+        time_seconds: float,
+    ) -> tuple[float, float]:
         current, previous, change_start = self._mascot_state(spec, time_seconds)
         progress = min(max((time_seconds - change_start) / 0.18, 0.0), 1.0)
         eased = 1.0 - (1.0 - progress) ** 3
-        return self._anchor_x(previous.mascot_anchor) + (
-            self._anchor_x(current.mascot_anchor) - self._anchor_x(previous.mascot_anchor)
-        ) * eased
+        previous_pose = self._calibration.poses[previous.mascot_pose.value]
+        current_pose = self._calibration.poses[current.mascot_pose.value]
+        previous_x = previous_pose.x + self._anchor_offset(previous.mascot_anchor)
+        current_x = current_pose.x + self._anchor_offset(current.mascot_anchor)
+        x = previous_x + (current_x - previous_x) * eased
+        y = previous_pose.y + (current_pose.y - previous_pose.y) * eased
+        return round(x, 4), round(y, 4)
 
     def _focus_state(self, spec: CompiledVideoSpec, time_seconds: float):
         previous = Focus.NEUTRAL
@@ -165,16 +179,22 @@ class ReferenceRenderer:
         time_seconds: float,
     ) -> None:
         current, _, change_start = self._mascot_state(spec, time_seconds)
-        path = self._mascot_paths.get(current.mascot_pose.value)
-        if path is None:
-            return
-        region = self.template.region("mascot")
         pop_progress = min(max((time_seconds - change_start) / 0.1, 0.0), 1.0)
-        scale = 1.0 + 0.06 * math.sin(math.pi * pop_progress)
-        image = self._fit(self._image(path), region, scale * 0.72)
-        x = round(self.mascot_x_at(spec, time_seconds) - image.width / 2)
-        y = region.y2 - image.height
-        canvas.alpha_composite(image, (x, y))
+        pop_scale = 1.0 + 0.06 * math.sin(math.pi * pop_progress)
+        pivot_x, pivot_y = self.mascot_pivot_at(spec, time_seconds)
+        configured = self._calibration.poses[current.mascot_pose.value]
+        animated = PoseCalibration(
+            x=pivot_x,
+            y=pivot_y,
+            scale=configured.scale,
+        )
+        self._calibration_service.paste_calibrated_pose(
+            canvas,
+            current.mascot_pose.value,
+            animated,
+            self._calibration,
+            extra_scale=pop_scale,
+        )
 
     def _draw_cta(self, draw: ImageDraw.ImageDraw) -> None:
         region = self.template.region("cta")
@@ -203,11 +223,11 @@ class ReferenceRenderer:
         return None
 
     @staticmethod
-    def _anchor_x(anchor: MascotAnchor) -> float:
+    def _anchor_offset(anchor: MascotAnchor) -> float:
         return {
-            MascotAnchor.LEFT: 300.0,
-            MascotAnchor.CENTER: 540.0,
-            MascotAnchor.RIGHT: 780.0,
+            MascotAnchor.LEFT: -240.0,
+            MascotAnchor.CENTER: 0.0,
+            MascotAnchor.RIGHT: 240.0,
         }[anchor]
 
     def _load_mascot_paths(self) -> dict[str, Path]:

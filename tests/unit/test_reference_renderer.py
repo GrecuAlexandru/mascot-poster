@@ -25,6 +25,14 @@ def _make_mascot_assets(directory: Path) -> None:
         '{"canvas_width":768,"canvas_height":768,"poses":{"neutral":"neutral.png","point_left":"point_left.png"}}',
         encoding="utf-8",
     )
+    (directory / "pose_calibration.json").write_text(
+        '{"canvas":{"width":1080,"height":1920},'
+        '"reference_dot":{"x":540,"y":1670,"radius":9,"color":[255,0,90,255]},'
+        '"source_pivot":{"x":384,"y":744},"base_render_height":533,'
+        '"poses":{"neutral":{"x":540,"y":1670,"scale":1.0},'
+        '"point_left":{"x":560,"y":1660,"scale":1.1}}}',
+        encoding="utf-8",
+    )
     for name in ("neutral.png", "point_left.png"):
         mascot = Image.new("RGBA", (768, 768), (255, 255, 255, 0))
         ImageDraw.Draw(mascot).ellipse((180, 120, 588, 700), fill=(230, 130, 30, 255))
@@ -74,6 +82,7 @@ def test_reference_renderer_uses_white_canvas_and_local_product_focus(tmp_path: 
     assert renderer.product_scale_at(spec, 0.18, Focus.LEFT) == 1.28
     assert renderer.product_scale_at(spec, 0.18, Focus.RIGHT) == 1.0
     assert renderer.mascot_x_at(spec, 0.09) < 540
+    assert renderer.mascot_pivot_at(spec, 0.18) == (320.0, 1660.0)
     assert frame.crop((120, 700, 960, 920)).getbbox() is not None
     assert len(list(renderer.iter_frames(spec))) == math.ceil(0.5 * 30)
 
