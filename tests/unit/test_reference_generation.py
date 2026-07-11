@@ -24,8 +24,10 @@ from app.domain.models import (
     TopicSpec,
 )
 from app.services.reference_direction_service import ReferenceDirectionService
+from app.services.reference_adapters import ReferenceResearcher, ReferenceResearchSummary
 from app.services.reference_script_service import ReferenceScriptService
 from app.services.reference_image_validator import ImageValidationResult
+from app.providers.search.base import SearchResponse, SearchResult
 from app.services.timeline_compiler import TimelineCompiler
 from app.services.video_generation_service import VideoGenerationService
 
@@ -218,6 +220,50 @@ def test_pair_repair_regenerates_both_images_with_pair_feedback(tmp_path: Path) 
     assert left["item"] == "Manual car"
     assert right["item"] == "Automatic car"
     assert validation.accepted
+
+
+def test_reference_researcher_requests_a_bounded_summary_not_full_sources() -> None:
+    class Search:
+        async def search(self, query, max_results=10, include_images=False):
+            return SearchResponse(
+                query=query,
+                results=[SearchResult(
+                    title="Reading study",
+                    url="https://example.com/reading",
+                    snippet="Evidence about reading formats",
+                )],
+            )
+
+    class LLM:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            self.calls.append((system, user, model_type, kwargs))
+            return ReferenceResearchSummary(
+                facts=[{
+                    "text": "A source reports that both reading formats are used.",
+                    "source_ids": ["src_0"],
+                    "confidence": 0.8,
+                    "applies_to": "both",
+                }],
+            )
+
+    llm = LLM()
+    researcher = ReferenceResearcher(Search(), llm)
+    topic = TopicSpec(
+        title="Physical books vs ebooks",
+        comparison_left="Physical books",
+        comparison_right="Ebooks",
+    )
+
+    result = asyncio.run(researcher.generate(topic))
+
+    assert llm.calls[0][2] is ReferenceResearchSummary
+    assert llm.calls[0][3]["max_tokens"] == 1200
+    assert "at most 6 facts" in llm.calls[0][1]
+    assert result.sources[0].id == "src_0"
+    assert len(result.facts) == 1
 
 
 def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> None:

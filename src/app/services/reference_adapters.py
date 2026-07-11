@@ -2,16 +2,32 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Optional
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
 
 from app.domain.models import (
     ReferenceScriptPackage,
+    ResearchFact,
     ResearchPackage,
     TopicCandidate,
     TopicSpec,
     VerificationResult,
 )
 from app.services.research_service import ResearchService
+
+
+class ReferenceResearchFact(BaseModel):
+    text: str = Field(min_length=1, max_length=280)
+    source_ids: list[str] = Field(min_length=1, max_length=3)
+    confidence: float = Field(ge=0.0, le=1.0)
+    applies_to: Literal["left", "right", "both", "general"] = "general"
+
+
+class ReferenceResearchSummary(BaseModel):
+    facts: list[ReferenceResearchFact] = Field(default_factory=list, max_length=6)
+    unresolved_questions: list[str] = Field(default_factory=list, max_length=3)
+    safety_notes: list[str] = Field(default_factory=list, max_length=3)
 
 
 class ReferenceTopicGenerator:
@@ -72,20 +88,37 @@ class ReferenceResearcher:
             f"- {source.id}: {source.title}; {source.url}" for source in sources[:12]
         ) or "- No verified source results"
         result = await self.llm.complete_structured(
-            "You synthesize comparison research using only supplied source results.",
+            "You synthesize compact comparison research using only supplied source results.",
             f"Topic: {topic.title}\nLeft: {topic.comparison_left}\nRight: {topic.comparison_right}\n"
-            f"Sources:\n{facts}",
-            ResearchPackage,
+            f"Sources:\n{facts}\n\n"
+            "Return at most 6 facts. Each fact must be under 280 characters and cite one to three "
+            "listed source IDs. Do not repeat, summarize, or return source objects; the application "
+            "already stores those separately. Keep unresolved questions and safety notes to at most 3 each.",
+            ReferenceResearchSummary,
             schema_name="reference_research",
             temperature=0.1,
-            max_tokens=2200,
+            max_tokens=1200,
         )
-        return result.model_copy(update={
-            "topic": topic.title,
-            "left_item": topic.comparison_left,
-            "right_item": topic.comparison_right,
-            "sources": result.sources or sources,
-        })
+        available_ids = {source.id for source in sources}
+        research_facts = [
+            fact.model_copy(update={
+                "source_ids": [source_id for source_id in fact.source_ids if source_id in available_ids],
+            })
+            for fact in result.facts
+        ]
+        return ResearchPackage(
+            topic=topic.title,
+            left_item=topic.comparison_left,
+            right_item=topic.comparison_right,
+            facts=[
+                ResearchFact(**fact.model_dump())
+                for fact in research_facts
+                if fact.source_ids
+            ],
+            sources=sources[:12],
+            unresolved_questions=result.unresolved_questions,
+            safety_notes=result.safety_notes,
+        )
 
 
 class ReferenceVerifier:
