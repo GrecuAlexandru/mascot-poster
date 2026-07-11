@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional, TypeVar
 
 from pydantic import BaseModel
@@ -58,5 +59,18 @@ class LLMProvider:
         temperature: float = 0.2,
         max_tokens: int = 4096,
         max_repair_attempts: int = 2,
+    ) -> ModelT:
+        raise NotImplementedError
+
+    async def complete_structured_with_images(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        image_paths: list[Path],
+        model_type: type[ModelT],
+        *,
+        schema_name: str,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
     ) -> ModelT:
         raise NotImplementedError

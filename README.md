@@ -1,70 +1,54 @@
 # Automated Short-Form Video Platform
 
-Creates vertical comparison videos for TikTok, YouTube Shorts, and Instagram Reels. It can plan a topic, research claims, write a script, generate narration and images, render the video, and publish it through the API.
+Creates vertical comparison videos for TikTok, YouTube Shorts, and Instagram Reels. The primary interface is a one-click generator that researches a comparison, writes and verifies a conclusive script, selects semantically validated paired images, generates word-timed narration and direction, and renders a 1080×1920 reference-style video.
 
 ## Run the application
 
-Install the project dependencies once in a Python 3.12+ environment:
+Install the project and development dependencies:
 
 ```powershell
 python -m pip install -e ".[dev]"
 ```
 
-Start the Streamlit dashboard:
+Start the one-click Streamlit generator:
 
 ```powershell
 python -m streamlit run streamlit_app.py
 ```
 
-Open the URL shown in the terminal, usually http://localhost:8501. The dashboard
-is fully self-contained — it imports the rendering, topic, script, research,
-fact-check, image, quality, publishing, and analytics services directly. No
-separate FastAPI process is needed.
+Open the URL shown in the terminal, usually http://localhost:8501. Choose optional advanced settings and press **Generate video**. The final result includes the video, poster, exact transcript, direction timeline, paired-image brief, complete image-attempt provenance, and quality report. Failed jobs resume from their last completed checkpoint.
 
-The entire pipeline is available as tabs in the dashboard:
-
-1. **Topic** — create a comparison topic manually, generate candidates with AI,
-   or load from a fixture.
-2. **Research** — search and synthesize facts for the topic (requires search +
-   LLM providers, or load from fixture).
-3. **Script** — generate a narration script with scene plans (requires LLM, or
-   load from fixture).
-4. **Fact Check** — verify script claims against research.
-5. **Images** — acquire, normalize, and build comparison canvases for left/right
-   images.
-6. **Render** — auto-build a render spec from the script's scene plan, edit
-   scenes visually, preview frames, and render the final video with audio muxing.
-7. **Quality** — validate the rendered video (resolution, fps, duration, codecs)
-   and generate a low-res preview.
-8. **Publish** — approve/reject the job, publish to TikTok/YouTube/Instagram, and
-   record analytics snapshots.
-
-The FastAPI server can still be used independently if you prefer headless/API
-access:
+The FastAPI server remains available for headless and integration use:
 
 ```powershell
 python -m uvicorn --app-dir src app.main:app --reload
 ```
 
-API docs are at http://127.0.0.1:8000/docs.
+API documentation is available at http://127.0.0.1:8000/docs.
 
 ## Configuration
 
-Copy `.env.example` to `.env` if you want to enable external providers. The local renderer and included mascot assets work without API keys.
+Copy `.env.example` to `.env` and provide the external-provider credentials used by the one-click workflow.
 
 | Variable | Purpose |
 | --- | --- |
-| `OPENROUTER_API_KEY` | Topic, script, and fact-check generation |
-| `ELEVENLABS_API_KEY` | Narration generation |
-| `SEARCH_API_KEY` | Web research |
-| `MASCOT_SET` | Mascot set to use; defaults to `default` |
+| `OPENROUTER_API_KEY` | Text models, semantic vision validation, and transparent image generation through OpenRouter |
+| `OPENROUTER_IMAGE_MODEL` | Transparent image model; defaults to `openai/gpt-image-1-mini` |
+| `OPENROUTER_VISION_MODEL` | Semantic image validator; defaults to `openai/gpt-4o-mini` |
+| `ELEVENLABS_API_KEY` | Word-timed narration generation |
+| `ELEVENLABS_VOICE_ID_RO` | Default Romanian narrator voice |
+| `ELEVENLABS_VOICE_ID_EN` | Default English narrator voice |
+| `SEARCH_API_KEY` | Web research and image search |
+| `MASCOT_SET` | Mascot set; defaults to `default` |
 
-## Useful optional commands
+## Validation and calibration
 
 ```powershell
 python -m pytest tests/ -v
 python scripts/validate_assets.py
+python scripts/generate_mascot_calibration.py
 python scripts/render_sample.py
+python scripts/render_reference_acceptance.py
 ```
 
-The active mascot files are in `assets/mascots/default`. Their names are validated against the pose names used by the application.
+The active mascot files and editable `pose_calibration.json` are in `assets/mascots/default`. The calibration generator creates one 1080×1920 preview for every pose, a contact sheet, and an index in `output/mascot_calibration`. Every preview uses the fixed reference dot at `(540, 1670)`; the dot is never included in production video frames.

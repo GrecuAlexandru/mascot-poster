@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         default="deepseek/deepseek-v4-flash",
         alias="DIRECTION_LLM_MODEL",
     )
+    vision_llm_model: str = Field(
+        default="openai/gpt-4o-mini",
+        alias="OPENROUTER_VISION_MODEL",
+    )
     llm_fallback_model: str = Field(
         default="qwen/qwen3.5-flash-02-23",
         alias="LLM_FALLBACK_MODEL",
@@ -203,6 +207,19 @@ def get_direction_llm_provider() -> Optional[object]:
         fallback_models=[settings.llm_fallback_model],
         base_url=settings.llm_base_url,
         skills_content=skills_content,
+    )
+
+
+def get_vision_llm_provider() -> Optional[object]:
+    settings = get_settings()
+    if not settings.llm_api_key:
+        return None
+    from app.providers.llm.openai_provider import LLMProvider
+    return LLMProvider(
+        api_key=settings.llm_api_key,
+        model=settings.vision_llm_model,
+        fallback_models=["google/gemini-2.5-flash-lite"],
+        base_url=settings.llm_base_url,
     )
 
 

@@ -28,6 +28,10 @@ class ReferenceRenderer:
         self._calibration_service = MascotCalibrationService(mascots_dir)
         self._calibration = self._calibration_service.load()
 
+    @property
+    def calibration_path(self) -> Path:
+        return self._calibration_service.config_path
+
     def compose_frame(self, spec: CompiledVideoSpec, time_seconds: float) -> Image.Image:
         canvas = Image.new(
             "RGBA",

@@ -78,6 +78,7 @@ class ReferenceRenderService:
             timeline_path=timeline_path,
             transcript_path=transcript_path,
             direction_path=direction_path,
+            calibration_path=self.renderer.calibration_path,
             duration_seconds=spec.total_duration_seconds,
             frame_count=frame_count,
             resolution=(spec.width, spec.height),

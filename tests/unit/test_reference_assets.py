@@ -10,11 +10,15 @@ from PIL import Image, ImageDraw
 from app.config import Settings, get_image_provider
 from app.providers.images.base import GeneratedImage
 from app.domain.enums import SfxKind
+from app.domain.models import PairedImageBrief, ProductImageBrief, ResearchPackage, TopicSpec
 from app.providers.images.openai_provider import OpenAIImageProvider
 from app.providers.images.openrouter_provider import OpenRouterImageProvider
 from app.providers.search.base import ImageCandidate, SearchResponse
 from app.providers.search.tavily_provider import TavilyProvider
 from app.services.reference_image_service import ReferenceImageService
+from app.services.reference_image_brief_service import ReferenceImageBriefService
+from app.services.reference_image_validator import ImageValidationResult
+from app.providers.llm.openai_provider import LLMProvider
 from app.services.mascot_asset_preparer import MascotAssetPreparer
 from app.services.mascot_service import MascotService
 from app.services.sfx_service import SfxLibraryService
@@ -32,6 +36,163 @@ def test_tavily_search_body_requests_described_images() -> None:
 
     assert body["include_images"] is True
     assert body["include_image_descriptions"] is True
+
+
+def _bread_image_brief() -> PairedImageBrief:
+    return PairedImageBrief(
+        shared_style=(
+            "same three-quarter camera angle, centered full loaf, matching scale, "
+            "neutral studio light, transparent background"
+        ),
+        left=ProductImageBrief(
+            item="Pâine albă",
+            exact_subject="single Romanian-style white bread loaf",
+            distinguishing_attributes=["pale white crumb", "light golden crust"],
+            required_elements=["one cut slice showing white crumb"],
+            prohibited_elements=["logo", "packaging", "prominent text"],
+            confusing_alternatives=["whole-wheat bread", "dark brown crumb"],
+        ),
+        right=ProductImageBrief(
+            item="Pâine integrală",
+            exact_subject="single whole-wheat bread loaf",
+            distinguishing_attributes=["brown whole-grain crumb", "visible grain texture"],
+            required_elements=["one cut slice showing brown crumb"],
+            prohibited_elements=["logo", "packaging", "prominent text"],
+            confusing_alternatives=["white bread", "pale white crumb"],
+        ),
+    )
+
+
+def test_generated_prompt_contains_identity_pair_style_and_negatives() -> None:
+    brief = _bread_image_brief()
+
+    prompt = ReferenceImageService.build_generation_prompt(
+        brief.left,
+        brief.shared_style,
+        [],
+    )
+
+    assert "single Romanian-style white bread loaf" in prompt
+    assert "pale white crumb" in prompt
+    assert "same three-quarter camera angle" in prompt
+    assert "no logo" in prompt
+    assert "not whole-wheat bread" in prompt
+
+
+def test_multimodal_request_contains_png_data_url(tmp_path: Path) -> None:
+    image_path = tmp_path / "candidate.png"
+    Image.new("RGBA", (8, 8), "white").save(image_path)
+    provider = LLMProvider(api_key="test", model="openai/gpt-4o-mini")
+
+    body = provider._build_multimodal_request(
+        "system",
+        "validate",
+        [image_path],
+        provider._strict_response_format(ImageValidationResult, "image_validation"),
+    )
+
+    content = body["messages"][1]["content"]
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_generated_retry_uses_semantic_feedback(tmp_path: Path) -> None:
+    class Search:
+        async def search(self, query, max_results=10, include_images=False):
+            return SearchResponse(query=query)
+
+    class Generator:
+        name = "generated"
+
+        def __init__(self) -> None:
+            self.prompts = []
+
+        async def generate(self, prompt, output_path, width=1024, height=1024):
+            self.prompts.append(prompt)
+            image = Image.new("RGBA", (1024, 1024), (255, 255, 255, 0))
+            ImageDraw.Draw(image).rectangle((200, 200, 824, 824), fill="brown")
+            image.save(output_path)
+            return GeneratedImage(path=output_path, prompt=prompt, provider=self.name)
+
+    class Validator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def validate_item(self, path, brief):
+            self.calls += 1
+            if self.calls == 1:
+                return ImageValidationResult(
+                    depicts_requested_item=False,
+                    distinguishing_attributes_present=False,
+                    contains_logo_or_prominent_text=False,
+                    contains_prohibited_content=True,
+                    background_acceptable=True,
+                    rejection_reasons=["looks like whole-wheat bread"],
+                    confidence=0.95,
+                )
+            return ImageValidationResult(
+                depicts_requested_item=True,
+                distinguishing_attributes_present=True,
+                contains_logo_or_prominent_text=False,
+                contains_prohibited_content=False,
+                background_acceptable=True,
+                confidence=0.95,
+            )
+
+    generator = Generator()
+    service = ReferenceImageService(
+        search_provider=Search(),
+        generated_provider=generator,
+        validator=Validator(),
+    )
+
+    provenance = asyncio.run(service.acquire(
+        "PÃ¢ine albÄƒ",
+        tmp_path / "selected.png",
+        brief=_bread_image_brief().left,
+    ))
+
+    assert provenance.attempts[0].rejection_reasons == ["looks like whole-wheat bread"]
+    assert "looks like whole-wheat bread" in generator.prompts[1]
+    assert provenance.attempts[-1].selected is True
+
+
+def test_logo_metadata_candidate_is_rejected() -> None:
+    candidate = ImageCandidate(
+        url="https://static.example/images/logos/social-preview.png",
+        source_title="Open Food Facts logo",
+    )
+
+    assert ReferenceImageService.metadata_rejection(candidate) == "logo or social-preview asset"
+
+
+def test_reference_image_brief_service_uses_strict_pair_schema() -> None:
+    class FakeLLM:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            self.calls.append((system, user, model_type, kwargs))
+            return _bread_image_brief()
+
+    llm = FakeLLM()
+    service = ReferenceImageBriefService(llm)
+    topic = TopicSpec(
+        title="Pâine albă vs Pâine integrală",
+        comparison_left="Pâine albă",
+        comparison_right="Pâine integrală",
+    )
+    research = ResearchPackage(
+        topic=topic.title,
+        left_item=topic.comparison_left,
+        right_item=topic.comparison_right,
+    )
+
+    result = asyncio.run(service.generate(topic, research))
+
+    assert result.left.item == "Pâine albă"
+    assert llm.calls[0][2] is PairedImageBrief
+    assert llm.calls[0][3]["schema_name"] == "paired_image_brief"
 
 
 def test_image_candidate_normalizes_null_optional_metadata() -> None:
@@ -85,6 +246,8 @@ def test_reference_preflight_needs_no_direct_openai_key() -> None:
 def test_one_click_interface_uses_english_copy() -> None:
     assert REFERENCE_STAGE_LABELS["preflight"] == "Checking configuration"
     assert REFERENCE_STAGE_LABELS["research_assets"] == "Finding sources and images"
+    assert REFERENCE_STAGE_LABELS["image_brief"] == "Defining the exact paired visuals"
+    assert REFERENCE_STAGE_LABELS["image_validation"] == "Selecting and validating product images"
     assert REFERENCE_LANGUAGE_LABELS == {"ro": "Romanian", "en": "English"}
 
 

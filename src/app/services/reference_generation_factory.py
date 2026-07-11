@@ -10,6 +10,7 @@ from app.config import (
     get_topic_history_service,
     get_topic_llm_provider,
     get_tts_provider,
+    get_vision_llm_provider,
 )
 from app.rendering.ffmpeg import FFmpegRunner
 from app.rendering.reference_renderer import ReferenceRenderer
@@ -23,6 +24,8 @@ from app.services.reference_adapters import (
 )
 from app.services.reference_direction_service import ReferenceDirectionService
 from app.services.reference_image_service import ReferenceImageService
+from app.services.reference_image_brief_service import ReferenceImageBriefService
+from app.services.reference_image_validator import ReferenceImageValidator
 from app.services.reference_quality_service import ReferenceQualityService
 from app.services.reference_render_service import ReferenceRenderService
 from app.services.reference_script_service import ReferenceScriptService
@@ -40,7 +43,14 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
     search = get_search_provider()
     tts = get_tts_provider()
     image_provider = get_image_provider()
-    if topic_llm is None or research_llm is None or script_llm is None or direction_llm is None:
+    vision_llm = get_vision_llm_provider()
+    if (
+        topic_llm is None
+        or research_llm is None
+        or script_llm is None
+        or direction_llm is None
+        or vision_llm is None
+    ):
         raise RuntimeError("OpenRouter model configuration is incomplete")
     if search is None:
         raise RuntimeError("Search provider configuration is incomplete")
@@ -74,6 +84,7 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
         image_service=ReferenceImageService(
             search_provider=search,
             generated_provider=image_provider,
+            validator=ReferenceImageValidator(vision_llm),
         ),
         audio_service=audio_service,
         sfx_service=SfxLibraryService(settings.audio_sample_rate),
@@ -82,4 +93,6 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
         quality_service=ReferenceQualityService(
             QualityService(settings.ffmpeg_bin, settings.ffprobe_bin),
         ),
+        image_brief_service=ReferenceImageBriefService(direction_llm),
+        image_validator=ReferenceImageValidator(vision_llm),
     )

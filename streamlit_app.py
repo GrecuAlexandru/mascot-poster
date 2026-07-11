@@ -2049,6 +2049,8 @@ REFERENCE_STAGE_LABELS = {
     "preflight": "Checking configuration",
     "topic": "Choosing the comparison",
     "research_assets": "Finding sources and images",
+    "image_brief": "Defining the exact paired visuals",
+    "image_validation": "Selecting and validating product images",
     "script_verification": "Writing and verifying the script",
     "direction_tts": "Creating narration and direction",
     "compiled": "Synchronizing captions and sound effects",
@@ -2175,6 +2177,7 @@ def render_reference_page() -> None:
             ("Transcript", render.transcript_path),
             ("Direction", render.direction_path),
             ("Image provenance", render.image_provenance_path),
+            ("Paired image brief", render.paired_image_brief_path),
             ("Quality report", render.quality_report_path),
         ):
             if path and path.exists():

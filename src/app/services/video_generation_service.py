@@ -106,6 +106,8 @@ class VideoGenerationService:
         timeline_compiler: object,
         renderer: object,
         quality_service: object,
+        image_brief_service: object | None = None,
+        image_validator: object | None = None,
     ):
         self.output_base = output_base
         self.topic_generator = topic_generator
@@ -120,6 +122,8 @@ class VideoGenerationService:
         self.timeline_compiler = timeline_compiler
         self.renderer = renderer
         self.quality_service = quality_service
+        self.image_brief_service = image_brief_service
+        self.image_validator = image_validator
 
     async def generate(
         self,
@@ -151,21 +155,73 @@ class VideoGenerationService:
                 left_image = Path(payload["left_image"])
                 right_image = Path(payload["right_image"])
                 provenance_path = Path(payload["provenance_path"])
+                paired_image_brief_path = job_dir / "paired_image_brief.json"
+                if not paired_image_brief_path.exists():
+                    paired_image_brief_path = None
             else:
                 assets_dir = job_dir / "assets"
                 assets_dir.mkdir(parents=True, exist_ok=True)
-                research, left_provenance, right_provenance = await asyncio.gather(
-                    self.researcher.generate(topic),
-                    self.image_service.acquire(topic.comparison_left, assets_dir / "left.png"),
-                    self.image_service.acquire(topic.comparison_right, assets_dir / "right.png"),
+                research = await self.researcher.generate(topic)
+                paired_brief = None
+                if self.image_brief_service is not None:
+                    await self._announce(progress_callback, "image_brief")
+                    paired_brief = await self.image_brief_service.generate(topic, research)
+                    paired_image_brief_path = job_dir / "paired_image_brief.json"
+                    paired_image_brief_path.write_text(
+                        paired_brief.model_dump_json(indent=2),
+                        encoding="utf-8",
+                    )
+                else:
+                    paired_image_brief_path = None
+                await self._announce(progress_callback, "image_validation")
+                left_provenance, right_provenance = await asyncio.gather(
+                    self._acquire_image(
+                        topic.comparison_left,
+                        assets_dir / "left.png",
+                        paired_brief.left if paired_brief else None,
+                        paired_brief.shared_style if paired_brief else "",
+                    ),
+                    self._acquire_image(
+                        topic.comparison_right,
+                        assets_dir / "right.png",
+                        paired_brief.right if paired_brief else None,
+                        paired_brief.shared_style if paired_brief else "",
+                    ),
                 )
                 left_image = assets_dir / "left.png"
                 right_image = assets_dir / "right.png"
+                pair_validation = None
+                if self.image_validator is not None and paired_brief is not None:
+                    pair_validation = await self.image_validator.validate_pair(
+                        left_image,
+                        right_image,
+                        paired_brief,
+                    )
+                    if not pair_validation.accepted:
+                        right_provenance = await self.image_service.acquire(
+                            topic.comparison_right,
+                            right_image,
+                            brief=paired_brief.right,
+                            shared_style=paired_brief.shared_style,
+                            prior_rejections=pair_validation.rejection_reasons,
+                            force_generated=True,
+                        )
+                        pair_validation = await self.image_validator.validate_pair(
+                            left_image,
+                            right_image,
+                            paired_brief,
+                        )
+                    if not pair_validation.accepted:
+                        raise RuntimeError(
+                            "Paired image validation failed: "
+                            + "; ".join(pair_validation.rejection_reasons)
+                        )
                 provenance_path = job_dir / "image_provenance.json"
                 provenance_path.write_text(
                     json.dumps({
                         "left": _CheckpointStore._serialize(left_provenance),
                         "right": _CheckpointStore._serialize(right_provenance),
+                        "pair_validation": _CheckpointStore._serialize(pair_validation),
                     }, indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
@@ -174,6 +230,7 @@ class VideoGenerationService:
                     "left_image": left_image,
                     "right_image": right_image,
                     "provenance_path": provenance_path,
+                    "paired_image_brief": paired_brief,
                 })
 
             stage = "script_verification"
@@ -288,6 +345,7 @@ class VideoGenerationService:
                 render_result = self.renderer.render(compiled, job_dir)
                 render_result = render_result.model_copy(update={
                     "image_provenance_path": provenance_path,
+                    "paired_image_brief_path": paired_image_brief_path,
                 })
                 checkpoint.save(stage, render_result)
 
@@ -301,8 +359,17 @@ class VideoGenerationService:
                     checkpoint.invalidate([stage])
             if not checkpoint.completed(stage):
                 problems = self.quality_service.validate(compiled, render_result)
+                provenance_payload = json.loads(provenance_path.read_text(encoding="utf-8"))
                 quality_report_path.write_text(
-                    json.dumps({"problems": problems}, indent=2, ensure_ascii=False),
+                    json.dumps({
+                        "problems": problems,
+                        "narration_end_seconds": compiled.narration_end_seconds,
+                        "cta_start_seconds": compiled.cta_start_seconds,
+                        "total_duration_seconds": compiled.total_duration_seconds,
+                        "render_duration_seconds": render_result.duration_seconds,
+                        "image_pair_validation": provenance_payload.get("pair_validation"),
+                        "calibration_path": str(render_result.calibration_path or ""),
+                    }, indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
                 checkpoint.save(stage, {"problems": problems})
@@ -311,6 +378,7 @@ class VideoGenerationService:
             render_result = render_result.model_copy(update={
                 "quality_report_path": quality_report_path,
                 "image_provenance_path": provenance_path,
+                "paired_image_brief_path": paired_image_brief_path,
             })
             checkpoint.save("render", render_result)
             return GenerationResult(job_id=job_id, render_result=render_result)
@@ -336,6 +404,22 @@ class VideoGenerationService:
         missing = [name for name, dependency in dependencies.items() if dependency is None]
         if missing:
             raise RuntimeError("Missing generation dependencies: " + ", ".join(missing))
+
+    async def _acquire_image(
+        self,
+        item: str,
+        output_path: Path,
+        brief: object | None,
+        shared_style: str,
+    ) -> Any:
+        if brief is None:
+            return await self.image_service.acquire(item, output_path)
+        return await self.image_service.acquire(
+            item,
+            output_path,
+            brief=brief,
+            shared_style=shared_style,
+        )
 
     async def _generate_verified_script(
         self,

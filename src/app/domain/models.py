@@ -44,6 +44,23 @@ class GenerationRequest(BaseModel):
     voice_id: Optional[str] = None
 
 
+class ProductImageBrief(BaseModel):
+    item: str
+    exact_subject: str = Field(min_length=3)
+    distinguishing_attributes: list[str] = Field(min_length=1)
+    required_elements: list[str] = Field(default_factory=list)
+    prohibited_elements: list[str] = Field(default_factory=list)
+    confusing_alternatives: list[str] = Field(default_factory=list)
+    allow_packaging: bool = False
+    allow_text: bool = False
+
+
+class PairedImageBrief(BaseModel):
+    shared_style: str = Field(min_length=10)
+    left: ProductImageBrief
+    right: ProductImageBrief
+
+
 class NarrationBeat(BaseModel):
     id: str = Field(min_length=1)
     text: str = Field(min_length=1)
@@ -250,6 +267,8 @@ class RenderResult(BaseModel):
     transcript_path: Optional[Path] = None
     direction_path: Optional[Path] = None
     image_provenance_path: Optional[Path] = None
+    paired_image_brief_path: Optional[Path] = None
+    calibration_path: Optional[Path] = None
     quality_report_path: Optional[Path] = None
     duration_seconds: float
     frame_count: int

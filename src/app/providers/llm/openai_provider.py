@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import base64
+import mimetypes
+from pathlib import Path
 from typing import Any, Optional, TypeVar
 
 import httpx
@@ -118,6 +121,47 @@ class LLMProvider(BaseLLMProvider):
                 body["provider"] = {"require_parameters": True}
         return body
 
+    def _strict_response_format(
+        self,
+        model_type: type[BaseModel],
+        schema_name: str,
+    ) -> dict[str, Any]:
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": schema_name,
+                "strict": True,
+                "schema": model_type.model_json_schema(),
+            },
+        }
+
+    def _build_multimodal_request(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        image_paths: list[Path],
+        response_format: dict[str, Any],
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+    ) -> dict[str, Any]:
+        body = self._build_request_body(
+            system_prompt,
+            user_prompt,
+            response_format,
+            temperature,
+            max_tokens,
+        )
+        content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
+        for path in image_paths:
+            mime = mimetypes.guess_type(path.name)[0] or "image/png"
+            encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{encoded}"},
+            })
+        body["messages"][1]["content"] = content
+        return body
+
     @retry(
         retry=retry_if_exception_type(LLMTransientError),
         stop=stop_after_attempt(3),
@@ -193,14 +237,7 @@ class LLMProvider(BaseLLMProvider):
         max_tokens: int = 4096,
         max_repair_attempts: int = 2,
     ) -> ModelT:
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": schema_name,
-                "strict": True,
-                "schema": model_type.model_json_schema(),
-            },
-        }
+        response_format = self._strict_response_format(model_type, schema_name)
         prompt = user_prompt
         for attempt in range(max_repair_attempts + 1):
             raw = await self.complete(
@@ -222,6 +259,49 @@ class LLMProvider(BaseLLMProvider):
                     f"Validation error: {exc}. Invalid response: {raw}"
                 )
         raise LLMRepairError("unreachable")
+
+    async def complete_structured_with_images(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        image_paths: list[Path],
+        model_type: type[ModelT],
+        *,
+        schema_name: str,
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+    ) -> ModelT:
+        response_format = self._strict_response_format(model_type, schema_name)
+        body = self._build_multimodal_request(
+            system_prompt,
+            user_prompt,
+            image_paths,
+            response_format,
+            temperature,
+            max_tokens,
+        )
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        if "openrouter.ai" in self._base_url:
+            headers["HTTP-Referer"] = "https://localhost:8000"
+            headers["X-Title"] = "Automated Short Video Platform"
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                f"{self._base_url}/chat/completions",
+                headers=headers,
+                json=body,
+            )
+        if response.status_code == 429 or response.status_code >= 500:
+            raise LLMTransientError(f"Vision model unavailable: {response.status_code}")
+        if response.status_code != 200:
+            raise LLMError(f"LLM API error {response.status_code}: {response.text[:500]}")
+        content = response.json()["choices"][0]["message"]["content"]
+        try:
+            return model_type.model_validate_json(content)
+        except (ValidationError, ValueError, json.JSONDecodeError) as exc:
+            raise LLMRepairError(f"Failed to validate {schema_name}: {exc}") from exc
 
     async def complete_json(
         self,
