@@ -19,7 +19,7 @@ from app.providers.search.tavily_provider import TavilyProvider
 from app.services.job_cost_ledger import JobCostLedger, cost_scope
 from app.services.reference_image_service import ReferenceImageService
 from app.services.reference_image_brief_service import ReferenceImageBriefService
-from app.services.reference_image_validator import ImageValidationResult
+from app.services.reference_image_validator import ImageValidationResult, ReferenceImageValidator
 from app.providers.llm.openai_provider import LLMProvider
 from app.services.mascot_asset_preparer import MascotAssetPreparer
 from app.services.mascot_service import MascotService
@@ -228,6 +228,43 @@ def test_multimodal_request_contains_png_data_url(tmp_path: Path) -> None:
     content = body["messages"][1]["content"]
     assert content[1]["type"] == "image_url"
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_pair_validator_uses_white_mattes_for_transparent_images(tmp_path: Path) -> None:
+    left = tmp_path / "left.png"
+    right = tmp_path / "right.png"
+    Image.new("RGBA", (32, 32), (20, 20, 20, 0)).save(left)
+    Image.new("RGBA", (32, 32), (0, 0, 0, 0)).save(right)
+
+    class LLM:
+        def __init__(self) -> None:
+            self.inspection_pixels = []
+
+        async def complete_structured_with_images(self, system, user, paths, model_type, **kwargs):
+            self.inspection_pixels = [
+                Image.open(path).convert("RGBA").getpixel((0, 0))
+                for path in paths
+            ]
+            return ImageValidationResult(
+                depicts_requested_item=True,
+                distinguishing_attributes_present=True,
+                contains_logo_or_prominent_text=False,
+                contains_prohibited_content=False,
+                background_acceptable=True,
+                pair_style_acceptable=True,
+                confidence=0.95,
+            )
+
+    llm = LLM()
+    result = asyncio.run(ReferenceImageValidator(llm).validate_pair(
+        left,
+        right,
+        _bread_image_brief(),
+    ))
+
+    assert result.accepted
+    assert llm.inspection_pixels == [(255, 255, 255, 255), (255, 255, 255, 255)]
+    assert Image.open(left).convert("RGBA").getpixel((0, 0))[3] == 0
 
 
 def test_generated_retry_uses_semantic_feedback(tmp_path: Path) -> None:
