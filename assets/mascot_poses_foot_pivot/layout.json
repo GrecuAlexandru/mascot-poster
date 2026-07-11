@@ -1,0 +1,34 @@
+{
+  "canvas": {
+    "width": 768,
+    "height": 768,
+    "foot_pivot": [384, 600],
+    "crop_padding": 14
+  },
+  "poses": {
+    "neutral": {"source": "1.png", "crop": [126, 61, 357, 398], "foot_pivot": [242, 382], "offset": [0, 0], "scale": 1.0},
+    "intro_hands_up": {"source": "1.png", "crop": [450, 60, 804, 398], "foot_pivot": [626, 383], "offset": [0, 0], "scale": 1.0},
+    "present_both": {"source": "1.png", "crop": [835, 59, 1183, 400], "foot_pivot": [1007, 383], "offset": [0, 0], "scale": 1.0},
+    "point_left": {"source": "1.png", "crop": [64, 435, 361, 772], "foot_pivot": [243, 758], "offset": [0, 0], "scale": 1.0},
+    "point_right": {"source": "1.png", "crop": [493, 435, 802, 772], "foot_pivot": [626, 758], "offset": [0, 0], "scale": 1.0},
+    "point_up": {"source": "1.png", "crop": [878, 435, 1168, 772], "foot_pivot": [1006, 758], "offset": [0, 0], "scale": 1.0},
+    "point_down": {"source": "1.png", "crop": [94, 807, 354, 1146], "foot_pivot": [243, 1131], "offset": [0, 0], "scale": 1.0},
+    "point_up_left": {"source": "1.png", "crop": [458, 807, 728, 1145], "foot_pivot": [624, 1130], "offset": [0, 0], "scale": 1.0},
+    "point_up_right": {"source": "1.png", "crop": [875, 807, 1159, 1147], "foot_pivot": [1007, 1131], "offset": [0, 0], "scale": 1.0},
+    "two_fingers_up": {"source": "2.png", "crop": [102, 39, 369, 394], "foot_pivot": [245, 381], "offset": [0, 0], "scale": 1.0},
+    "idea": {"source": "2.png", "crop": [486, 41, 750, 395], "foot_pivot": [625, 381], "offset": [0, 0], "scale": 1.0},
+    "thinking": {"source": "2.png", "crop": [914, 44, 1124, 396], "foot_pivot": [1007, 381], "offset": [0, 0], "scale": 1.0},
+    "surprised": {"source": "2.png", "crop": [132, 434, 357, 780], "foot_pivot": [244, 765], "offset": [0, 0], "scale": 1.0},
+    "explaining": {"source": "2.png", "crop": [436, 437, 711, 780], "foot_pivot": [625, 765], "offset": [0, 0], "scale": 1.0},
+    "compare_left_right": {"source": "2.png", "crop": [817, 437, 1187, 781], "foot_pivot": [1007, 765], "offset": [0, 0], "scale": 1.0},
+    "thumbs_up": {"source": "2.png", "crop": [101, 818, 354, 1165], "foot_pivot": [245, 1149], "offset": [0, 0], "scale": 1.0},
+    "warning": {"source": "2.png", "crop": [485, 819, 752, 1165], "foot_pivot": [625, 1149], "offset": [0, 0], "scale": 1.0},
+    "shrug": {"source": "2.png", "crop": [836, 818, 1178, 1165], "foot_pivot": [1007, 1149], "offset": [0, 0], "scale": 1.0},
+    "celebrate": {"source": "3.png", "crop": [54, 123, 452, 549], "foot_pivot": [248, 531], "offset": [0, 0], "scale": 1.0},
+    "outro_wave": {"source": "3.png", "crop": [481, 124, 786, 549], "foot_pivot": [665, 531], "offset": [0, 0], "scale": 1.0},
+    "magnifying_glass": {"source": "3.png", "crop": [885, 133, 1197, 562], "foot_pivot": [1046, 542], "offset": [0, 0], "scale": 1.0},
+    "reading_note": {"source": "3.png", "crop": [102, 627, 369, 1047], "foot_pivot": [246, 1029], "offset": [0, 0], "scale": 1.0},
+    "phone_in_hand": {"source": "3.png", "crop": [490, 626, 776, 1049], "foot_pivot": [664, 1029], "offset": [0, 0], "scale": 1.0},
+    "arms_crossed": {"source": "3.png", "crop": [927, 625, 1166, 1050], "foot_pivot": [1045, 1031], "offset": [0, 0], "scale": 1.0}
+  }
+}

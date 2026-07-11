@@ -1,0 +1,41 @@
+{
+  "name": "Publish Video",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish"
+      },
+      "name": "Approve Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://api:8000/api/v1/jobs/{{$json.job_id}}/publish",
+        "method": "POST",
+        "jsonBody": "={\n  \"platform\": \"tiktok\",\n  \"video_url\": \"{{$json.video_url}}\",\n  \"caption\": \"{{$json.caption}}\",\n  \"disclose_ai_generated\": true\n}"
+      },
+      "name": "Publish",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "{{$env TELEGRAM_CHAT_ID}}",
+        "text": "Published successfully! Job: {{$json.job_id}}"
+      },
+      "name": "Notify",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [750, 300]
+    }
+  ],
+  "connections": {
+    "Approve Webhook": {"main": [[{"node": "Publish", "type": "main", "index": 0}]]},
+    "Publish": {"main": [[{"node": "Notify", "type": "main", "index": 0}]]}
+  },
+  "active": false
+}

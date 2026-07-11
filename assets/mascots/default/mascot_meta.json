@@ -1,0 +1,33 @@
+{
+  "set_name": "default_mascot",
+  "canvas_width": 768,
+  "canvas_height": 768,
+  "poses": {
+    "neutral": "neutral.png",
+    "intro_hands_up": "intro_hands_up.png",
+    "present_both": "present_both.png",
+    "point_left": "point_left.png",
+    "point_right": "point_right.png",
+    "point_up": "point_up.png",
+    "point_down": "point_down.png",
+    "point_up_left": "point_up_left.png",
+    "point_up_right": "point_up_right.png",
+    "two_fingers_up": "two_fingers_up.png",
+    "idea": "idea.png",
+    "thinking": "thinking.png",
+    "surprised": "surprised.png",
+    "explaining": "explaining.png",
+    "compare_left_right": "compare_left_right.png",
+    "thumbs_up": "thumbs_up.png",
+    "warning": "warning.png",
+    "shrug": "shrug.png",
+    "celebrate": "celebrate.png",
+    "outro_wave": "outro_wave.png",
+    "magnifying_glass": "magnifying_glass.png",
+    "reading_note": "reading_note.png",
+    "phone_in_hand": "phone_in_hand.png",
+    "arms_crossed": "arms_crossed.png"
+  },
+  "alpha_prepared": true,
+  "foot_pivot_y": 744
+}

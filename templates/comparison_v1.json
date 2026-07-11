@@ -1,0 +1,37 @@
+{
+  "name": "comparison_v1",
+  "description": "Standard comparison layout: title, two side-by-side images, phrase, mascot",
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "background": {
+    "type": "solid",
+    "color": [18, 18, 24]
+  },
+  "regions": {
+    "title":      [80, 80, 920, 180],
+    "left_label":  [80, 250, 430, 60],
+    "right_label": [570, 250, 430, 60],
+    "left_image":  [80, 330, 430, 480],
+    "right_image": [570, 330, 430, 480],
+    "phrase":      [80, 860, 920, 160],
+    "mascot":      [180, 1080, 720, 720]
+  },
+  "safe_zones": {
+    "top_margin": 40,
+    "bottom_margin": 120,
+    "side_margin": 40,
+    "right_ui_width": 80
+  },
+  "fonts": {
+    "title": {"size": 64, "color": [255, 255, 255]},
+    "label": {"size": 36, "color": [220, 220, 230]},
+    "phrase": {"size": 72, "color": [255, 210, 80]}
+  },
+  "focus_highlight": {
+    "color": [255, 210, 80],
+    "border_width": 6,
+    "alpha": 180
+  }
+}

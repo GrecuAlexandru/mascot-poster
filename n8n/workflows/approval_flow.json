@@ -1,0 +1,43 @@
+{
+  "name": "Approval Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "approval"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "{{$env TELEGRAM_CHAT_ID}}",
+        "text": "VIDEO READY\nTopic: {{$json.topic}}\nCost: ${{$json.estimated_cost_usd}}\nPreview: {{$json.preview_url}}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboardRows": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {"text": "Approve", "url": "{{$json.approve_url}}"},
+                  {"text": "Reject", "url": "{{$json.reject_url}}"},
+                  {"text": "Regenerate", "url": "{{$json.regenerate_url}}"}
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "name": "Send Approval",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [500, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {"main": [[{"node": "Send Approval", "type": "main", "index": 0}]]}
+  },
+  "active": false
+}

@@ -1,0 +1,37 @@
+{
+  "name": "reference_v1",
+  "description": "White reference layout with product focus, progressive captions, and lower mascot cues",
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "background": {
+    "type": "solid",
+    "color": [255, 255, 255]
+  },
+  "regions": {
+    "left_image": [50, 80, 420, 500],
+    "right_image": [550, 80, 400, 500],
+    "left_label": [50, 600, 420, 70],
+    "right_label": [550, 600, 400, 70],
+    "caption": [100, 720, 880, 180],
+    "mascot": [100, 930, 880, 740],
+    "cta": [220, 1460, 640, 120]
+  },
+  "safe_zones": {
+    "top_margin": 40,
+    "bottom_margin": 180,
+    "side_margin": 40,
+    "right_ui_width": 80
+  },
+  "fonts": {
+    "label": {"size": 60, "color": [18, 18, 18]},
+    "caption": {"size": 70, "color": [15, 15, 15]},
+    "cta": {"size": 42, "color": [15, 15, 15]}
+  },
+  "focus_highlight": {
+    "color": [255, 255, 255],
+    "border_width": 0,
+    "alpha": 0
+  }
+}

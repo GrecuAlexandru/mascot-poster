@@ -1,0 +1,89 @@
+{
+  "topic": "Vanilla sugar vs vanillin sugar",
+  "left_item": "Vanilla sugar",
+  "right_item": "Vanillin sugar",
+  "facts": [
+    {
+      "text": "Vanilla sugar is made with real vanilla beans from the vanilla orchid.",
+      "source_ids": [
+        "src_0",
+        "src_1"
+      ],
+      "confidence": 0.95,
+      "applies_to": "left"
+    },
+    {
+      "text": "Vanillin sugar uses artificial vanillin, a synthetic compound.",
+      "source_ids": [
+        "src_1",
+        "src_2"
+      ],
+      "confidence": 0.92,
+      "applies_to": "right"
+    },
+    {
+      "text": "Natural vanilla contains over 200 flavor compounds.",
+      "source_ids": [
+        "src_0"
+      ],
+      "confidence": 0.85,
+      "applies_to": "left"
+    },
+    {
+      "text": "Artificial vanillin provides only one flavor compound.",
+      "source_ids": [
+        "src_2"
+      ],
+      "confidence": 0.9,
+      "applies_to": "right"
+    },
+    {
+      "text": "Vanilla sugar is more expensive than vanillin sugar.",
+      "source_ids": [
+        "src_3"
+      ],
+      "confidence": 0.8,
+      "applies_to": "left"
+    }
+  ],
+  "sources": [
+    {
+      "id": "src_0",
+      "url": "https://en.wikipedia.org/wiki/Vanilla",
+      "title": "Vanilla - Wikipedia",
+      "publisher": "wikipedia.org",
+      "retrieved_at": null,
+      "trust_score": 0.8,
+      "source_type": "reference"
+    },
+    {
+      "id": "src_1",
+      "url": "https://www.fda.gov/food/food-ingredients-packaging",
+      "title": "FDA Food Ingredients",
+      "publisher": "fda.gov",
+      "retrieved_at": null,
+      "trust_score": 0.9,
+      "source_type": "government"
+    },
+    {
+      "id": "src_2",
+      "url": "https://www.sciencedirect.com/topics/vanillin",
+      "title": "Vanillin synthesis - ScienceDirect",
+      "publisher": "sciencedirect.com",
+      "retrieved_at": null,
+      "trust_score": 0.85,
+      "source_type": "scientific"
+    },
+    {
+      "id": "src_3",
+      "url": "https://www.amazon.com/vanilla-sugar",
+      "title": "Vanilla sugar pricing",
+      "publisher": "amazon.com",
+      "retrieved_at": null,
+      "trust_score": 0.6,
+      "source_type": "retail"
+    }
+  ],
+  "unresolved_questions": [],
+  "safety_notes": []
+}

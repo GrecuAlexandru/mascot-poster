@@ -1,0 +1,41 @@
+{
+  "name": "Analytics Collection",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "hours", "hoursInterval": 6}]
+        }
+      },
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.intervalTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://api:8000/metrics",
+        "method": "GET"
+      },
+      "name": "Get Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "{{$env TELEGRAM_CHAT_ID}}",
+        "text": "Analytics collected:\nTotal jobs: {{$json.total_jobs}}\n{{JSON.stringify($json.by_status)}}"
+      },
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [750, 300]
+    }
+  ],
+  "connections": {
+    "Every 6 Hours": {"main": [[{"node": "Get Metrics", "type": "main", "index": 0}]]},
+    "Get Metrics": {"main": [[{"node": "Send Summary", "type": "main", "index": 0}]]}
+  },
+  "active": false
+}

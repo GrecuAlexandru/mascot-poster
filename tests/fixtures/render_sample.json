@@ -1,0 +1,102 @@
+{
+  "title": "Vanilla sugar vs vanillin sugar",
+  "left_label": "Vanilla sugar",
+  "right_label": "Vanillin sugar",
+  "left_image": "tests/fixtures/left.png",
+  "right_image": "tests/fixtures/right.png",
+  "audio": "tests/fixtures/narration.mp3",
+  "template": "comparison_v1",
+  "mascot_set": "default",
+  "scenes": [
+    {
+      "start": 0.0,
+      "end": 4.0,
+      "pose": "intro_hands_up",
+      "phrase": "THEY LOOK SIMILAR",
+      "focus": "both",
+      "image_motion": "slow_zoom_in",
+      "transition": "fade"
+    },
+    {
+      "start": 4.0,
+      "end": 10.0,
+      "pose": "point_left",
+      "phrase": "NATURAL VANILLA",
+      "focus": "left",
+      "image_motion": "slow_zoom_in",
+      "transition": "quick_fade"
+    },
+    {
+      "start": 10.0,
+      "end": 14.0,
+      "pose": "thinking",
+      "phrase": "",
+      "focus": "both",
+      "image_motion": "slow_pan_right",
+      "transition": "quick_fade"
+    },
+    {
+      "start": 14.0,
+      "end": 22.0,
+      "pose": "point_right",
+      "phrase": "ARTIFICIAL VANILLIN",
+      "focus": "right",
+      "image_motion": "slow_zoom_in",
+      "transition": "quick_fade"
+    },
+    {
+      "start": 22.0,
+      "end": 28.0,
+      "pose": "compare_left_right",
+      "phrase": "KEY DIFFERENCE",
+      "focus": "both",
+      "image_motion": "slow_zoom_out",
+      "transition": "crossfade"
+    },
+    {
+      "start": 28.0,
+      "end": 36.0,
+      "pose": "point_left",
+      "phrase": "REAL BEANS",
+      "focus": "left",
+      "image_motion": "slow_zoom_in",
+      "transition": "quick_fade"
+    },
+    {
+      "start": 36.0,
+      "end": 42.0,
+      "pose": "warning",
+      "phrase": "CHECK LABELS",
+      "focus": "both",
+      "image_motion": "slow_pan_left",
+      "transition": "quick_fade"
+    },
+    {
+      "start": 42.0,
+      "end": 50.0,
+      "pose": "point_right",
+      "phrase": "CHEAPER OPTION",
+      "focus": "right",
+      "image_motion": "slow_zoom_in",
+      "transition": "quick_fade"
+    },
+    {
+      "start": 50.0,
+      "end": 56.0,
+      "pose": "surprised",
+      "phrase": "NOT THE SAME!",
+      "focus": "both",
+      "image_motion": "pulse",
+      "transition": "crossfade"
+    },
+    {
+      "start": 56.0,
+      "end": 60.0,
+      "pose": "thumbs_up",
+      "phrase": "CHOOSE WISELY",
+      "focus": "both",
+      "image_motion": "slow_zoom_in",
+      "transition": "fade"
+    }
+  ]
+}

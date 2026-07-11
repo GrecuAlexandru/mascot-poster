@@ -1,0 +1,42 @@
+[
+  {
+    "title": "Espresso vs Cold Brew – Same Bean, Completely Different Buzz",
+    "left": "Espresso",
+    "right": "Cold Brew",
+    "angle": "Compare caffeine content per ounce, acidity, Brewing time, and flavor profile. Show why one is smoother but the other hits faster.",
+    "job_id": "a5ebbeb6-9965-4f37-acee-2537c46384ab",
+    "added_at": "2026-07-10T15:43:11.925708+00:00"
+  },
+  {
+    "title": "Stainless Steel vs Non-Stick Pans – Why Chefs Hate Your Favourite Pan",
+    "left": "Stainless Steel Pan",
+    "right": "Non-Stick Pan",
+    "angle": "Comparing durability, heat control, food release, and health concerns",
+    "job_id": "ceccfcf6-09ca-4545-9edf-a20e86e642df",
+    "added_at": "2026-07-10T17:26:48.273294+00:00"
+  },
+  {
+    "title": "Cărți fizice vs Cărți electronice – Ce pierzi când renunți la hârtie",
+    "left": "Cărți fizice",
+    "right": "Cărți electronice (e-reader)",
+    "angle": "Experiența de lectură, sănătatea ochilor și cât reții din ce citești",
+    "job_id": "",
+    "added_at": "2026-07-10T19:51:58.882768+00:00"
+  },
+  {
+    "title": "Miere vs. Zahăr – Unul e aur lichid, celălalt e otravă albă?",
+    "left": "Miere",
+    "right": "Zahăr",
+    "angle": "Impact metabolic, nutriție și efecte reale asupra sănătății.",
+    "job_id": "",
+    "added_at": "2026-07-10T20:08:04.120184+00:00"
+  },
+  {
+    "title": "Pâine albă vs Pâine integrală – Care te umflă mai rău?",
+    "left": "Pâine albă",
+    "right": "Pâine integrală",
+    "angle": "Digestie, sațietate și impact asupra glicemiei",
+    "job_id": "",
+    "added_at": "2026-07-10T20:29:29.963380+00:00"
+  }
+]

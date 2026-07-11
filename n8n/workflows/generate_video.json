@@ -1,0 +1,67 @@
+{
+  "name": "Generate Video (Scheduled)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "0 9,17 * * *"}]
+        }
+      },
+      "name": "Cron Trigger",
+      "type": "n8n-nodes-base.cronTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://api:8000/api/v1/jobs",
+        "method": "POST",
+        "jsonBody": "={\n  \"channel_id\": \"default\",\n  \"auto_select_topic\": true,\n  \"language\": \"en\",\n  \"niche\": \"food facts\"\n}",
+        "options": {"headers": {"Content-Type": "application/json"}}
+      },
+      "name": "Create Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://api:8000/api/v1/jobs/{{$json.job_id}}",
+        "method": "GET"
+      },
+      "name": "Poll Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{"value1": "{{$json.status}}", "value2": "FAILED"}]
+        }
+      },
+      "name": "Check Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "{{$env TELEGRAM_CHAT_ID}}",
+        "text": "Job failed: {{$json.error_message}}",
+        "additionalFields": {}
+      },
+      "name": "Send Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1250, 200]
+    }
+  ],
+  "connections": {
+    "Cron Trigger": {"main": [[{"node": "Create Job", "type": "main", "index": 0}]]},
+    "Create Job": {"main": [[{"node": "Poll Status", "type": "main", "index": 0}]]},
+    "Poll Status": {"main": [[{"node": "Check Failed", "type": "main", "index": 0}]]},
+    "Check Failed": {"main": [[{"node": "Send Alert", "type": "main", "index": 0}]]}
+  },
+  "active": false
+}

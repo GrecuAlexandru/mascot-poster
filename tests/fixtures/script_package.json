@@ -1,0 +1,198 @@
+{
+  "title": "Vanilla sugar vs vanillin sugar",
+  "hook": "They look almost identical, but they are not the same thing.",
+  "narration_text": "Vanilla sugar and vanillin sugar. They look almost identical, but they are not the same thing. Vanilla sugar is made with real vanilla beans, which contain natural vanillin extracted from the orchid pod. Vanillin sugar uses artificial vanillin, a synthetic compound that mimics the flavor. The difference matters. Natural vanilla has over two hundred flavor compounds, while artificial vanillin only provides one. That is why vanilla sugar tastes richer and more complex. Vanillin sugar is cheaper, but simpler. So check the labels carefully. If it says vanilla, you get the real thing. If it says vanillin, it is artificial. They may look similar, but choose wisely.",
+  "caption": "Did you know vanilla sugar and vanillin sugar are completely different? Check the labels next time you shop!",
+  "hashtags": [
+    "vanilla",
+    "vanillin",
+    "foodfacts",
+    "comparison",
+    "didyouknow"
+  ],
+  "claims": [
+    {
+      "id": "claim_1",
+      "text": "Vanilla sugar contains natural vanillin from orchid pods",
+      "supporting_source_ids": [],
+      "confidence": 0.95,
+      "risk_level": "low"
+    },
+    {
+      "id": "claim_2",
+      "text": "Vanillin sugar uses artificial vanillin",
+      "supporting_source_ids": [],
+      "confidence": 0.9,
+      "risk_level": "low"
+    },
+    {
+      "id": "claim_3",
+      "text": "Natural vanilla has over 200 flavor compounds",
+      "supporting_source_ids": [],
+      "confidence": 0.85,
+      "risk_level": "low"
+    }
+  ],
+  "scenes": [
+    {
+      "index": 0,
+      "narration": "Vanilla sugar and vanillin sugar.",
+      "duration_hint_seconds": 5.0,
+      "mascot_pose": "point_up",
+      "focus": "both",
+      "on_screen_phrases": [
+        "THEY LOOK SIMILAR"
+      ],
+      "transition": "fade",
+      "image_motion": "slow_zoom_in",
+      "emphasis": []
+    },
+    {
+      "index": 1,
+      "narration": "They look almost identical, but they are not the same thing.",
+      "duration_hint_seconds": 6.0,
+      "mascot_pose": "present_both",
+      "focus": "both",
+      "on_screen_phrases": [
+        "NOT THE SAME"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_pan_right",
+      "emphasis": []
+    },
+    {
+      "index": 2,
+      "narration": "Vanilla sugar is made with real vanilla beans, which contain natural vanillin extracted from the orchid pod.",
+      "duration_hint_seconds": 8.0,
+      "mascot_pose": "point_left",
+      "focus": "left",
+      "on_screen_phrases": [
+        "NATURAL VANILLA"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_zoom_in",
+      "emphasis": []
+    },
+    {
+      "index": 3,
+      "narration": "Vanillin sugar uses artificial vanillin, a synthetic compound that mimics the flavor.",
+      "duration_hint_seconds": 7.0,
+      "mascot_pose": "point_right",
+      "focus": "right",
+      "on_screen_phrases": [
+        "ARTIFICIAL VANILLIN"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_pan_right",
+      "emphasis": []
+    },
+    {
+      "index": 4,
+      "narration": "The difference matters.",
+      "duration_hint_seconds": 3.0,
+      "mascot_pose": "surprised",
+      "focus": "both",
+      "on_screen_phrases": [
+        "KEY DIFFERENCE"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_zoom_in",
+      "emphasis": []
+    },
+    {
+      "index": 5,
+      "narration": "Natural vanilla has over two hundred flavor compounds, while artificial vanillin only provides one.",
+      "duration_hint_seconds": 6.0,
+      "mascot_pose": "thinking",
+      "focus": "both",
+      "on_screen_phrases": [
+        "200 COMPOUNDS"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_pan_right",
+      "emphasis": []
+    },
+    {
+      "index": 6,
+      "narration": "That is why vanilla sugar tastes richer and more complex.",
+      "duration_hint_seconds": 5.0,
+      "mascot_pose": "point_left",
+      "focus": "left",
+      "on_screen_phrases": [
+        "RICHER TASTE"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_zoom_in",
+      "emphasis": []
+    },
+    {
+      "index": 7,
+      "narration": "Vanillin sugar is cheaper, but simpler.",
+      "duration_hint_seconds": 5.0,
+      "mascot_pose": "point_right",
+      "focus": "right",
+      "on_screen_phrases": [
+        "CHEAPER OPTION"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_pan_right",
+      "emphasis": []
+    },
+    {
+      "index": 8,
+      "narration": "So check the labels carefully.",
+      "duration_hint_seconds": 3.0,
+      "mascot_pose": "warning",
+      "focus": "both",
+      "on_screen_phrases": [
+        "CHECK LABELS"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_zoom_in",
+      "emphasis": []
+    },
+    {
+      "index": 9,
+      "narration": "If it says vanilla, you get the real thing.",
+      "duration_hint_seconds": 4.0,
+      "mascot_pose": "point_left",
+      "focus": "left",
+      "on_screen_phrases": [
+        "REAL VANILLA"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_pan_right",
+      "emphasis": []
+    },
+    {
+      "index": 10,
+      "narration": "If it says vanillin, it is artificial.",
+      "duration_hint_seconds": 4.0,
+      "mascot_pose": "point_right",
+      "focus": "right",
+      "on_screen_phrases": [
+        "ARTIFICIAL"
+      ],
+      "transition": "quick_fade",
+      "image_motion": "slow_zoom_in",
+      "emphasis": []
+    },
+    {
+      "index": 11,
+      "narration": "They may look similar, but choose wisely.",
+      "duration_hint_seconds": 4.0,
+      "mascot_pose": "thumbs_up",
+      "focus": "both",
+      "on_screen_phrases": [
+        "CHOOSE WISELY"
+      ],
+      "transition": "fade",
+      "image_motion": "slow_pan_right",
+      "emphasis": []
+    }
+  ],
+  "estimated_duration_seconds": 60.0,
+  "left_image": "tests/fixtures/left.png",
+  "right_image": "tests/fixtures/right.png",
+  "audio": "tests/fixtures/narration.mp3"
+}
