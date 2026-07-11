@@ -2095,7 +2095,7 @@ def _reference_preflight(settings, language: str) -> list[str]:
         problems.append("Missing OPENROUTER_API_KEY")
     if not settings.elevenlabs_api_key:
         problems.append("Missing ELEVENLABS_API_KEY")
-    if not settings.search_api_key:
+    if settings.search_provider.lower() != "searxng" and not settings.search_api_key:
         problems.append("Missing SEARCH_API_KEY")
     if language == "ro" and not settings.elevenlabs_voice_id_ro:
         problems.append("Missing ELEVENLABS_VOICE_ID_RO")

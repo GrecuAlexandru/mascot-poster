@@ -40,8 +40,28 @@ Copy `.env.example` to `.env` and provide the external-provider credentials used
 | `ELEVENLABS_API_KEY` | Word-timed narration generation |
 | `ELEVENLABS_VOICE_ID_RO` | Default Romanian narrator voice |
 | `ELEVENLABS_VOICE_ID_EN` | Default English narrator voice |
-| `SEARCH_API_KEY` | Web research and image search |
+| `SEARCH_PROVIDER` | Search backend; defaults to local `searxng` |
+| `SEARXNG_BASE_URL` | Local endpoint used by Streamlit; defaults to `http://localhost:8080` |
+| `SEARXNG_SECRET` | Optional local SearXNG session secret; set a unique value before exposing the service |
+| `SEARCH_API_KEY` | Required only for explicit paid `tavily` or `serper` selection |
 | `MASCOT_SET` | Mascot set; defaults to `default` |
+
+## Local SearXNG search
+
+SearXNG is the default source and image-search provider. Start only the local search service with:
+
+```powershell
+docker compose up -d searxng
+```
+
+Open http://localhost:8080 to inspect it, or check the JSON integration directly:
+
+```powershell
+python scripts/check_searxng.py
+docker compose ps searxng
+```
+
+Stop it with `docker compose stop searxng`. The Streamlit app uses `http://localhost:8080`; the API and worker use the Docker service address automatically. SearXNG has no per-query provider charge, so each general and image request appears as a zero-dollar ledger event. It still uses local CPU, memory, bandwidth, and the upstream engines available to the instance. Set `SEARCH_PROVIDER=tavily` or `SEARCH_PROVIDER=serper` only when you deliberately want a paid provider and have supplied `SEARCH_API_KEY`.
 
 ## Validation and calibration
 

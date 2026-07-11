@@ -7,14 +7,16 @@ import wave
 
 from PIL import Image, ImageDraw
 
-from app.config import Settings, get_image_provider
+from app.config import Settings, get_image_provider, get_search_provider
 from app.providers.images.base import GeneratedImage
 from app.domain.enums import SfxKind
 from app.domain.models import PairedImageBrief, ProductImageBrief, ResearchPackage, TopicSpec
 from app.providers.images.openai_provider import OpenAIImageProvider
 from app.providers.images.openrouter_provider import OpenRouterImageProvider
-from app.providers.search.base import ImageCandidate, SearchResponse
+from app.providers.search.base import ImageCandidate, SearchResponse, SearchResult
+from app.providers.search.searxng_provider import SearXNGProvider
 from app.providers.search.tavily_provider import TavilyProvider
+from app.services.job_cost_ledger import JobCostLedger, cost_scope
 from app.services.reference_image_service import ReferenceImageService
 from app.services.reference_image_brief_service import ReferenceImageBriefService
 from app.services.reference_image_validator import ImageValidationResult
@@ -22,6 +24,7 @@ from app.providers.llm.openai_provider import LLMProvider
 from app.services.mascot_asset_preparer import MascotAssetPreparer
 from app.services.mascot_service import MascotService
 from app.services.sfx_service import SfxLibraryService
+from scripts.check_searxng import run_check
 from streamlit_app import (
     REFERENCE_LANGUAGE_LABELS,
     REFERENCE_STAGE_LABELS,
@@ -41,6 +44,131 @@ def test_tavily_search_body_requests_described_images() -> None:
 
     assert body["include_images"] is True
     assert body["include_image_descriptions"] is True
+
+
+def test_searxng_maps_general_and_image_json_to_search_response() -> None:
+    provider = SearXNGProvider("http://search.test")
+
+    async def fake_get_json(params):
+        if params["categories"] == "general":
+            return {"results": [
+                {
+                    "title": "Coffee guide",
+                    "url": "https://example.com/coffee",
+                    "content": "A useful guide",
+                    "score": 4.0,
+                },
+                {"title": None, "url": ""},
+            ]}
+        return {"results": [
+            {
+                "title": "Coffee beans",
+                "img_src": "https://cdn.example.com/coffee.png",
+                "thumbnail_src": "https://cdn.example.com/coffee-thumb.png",
+                "url": "https://example.com/coffee",
+                "content": "Fresh beans",
+                "score": 3.0,
+            },
+            {
+                "title": "Duplicate",
+                "img_src": "https://cdn.example.com/coffee.png",
+                "url": "https://example.com/duplicate",
+            },
+            {"title": "Missing image"},
+        ]}
+
+    provider._get_json = fake_get_json
+    ledger = JobCostLedger("job-1")
+    with cost_scope(ledger, "research_assets"):
+        response = asyncio.run(provider.search("coffee", max_results=5, include_images=True))
+
+    assert response.provider == "searxng"
+    assert response.estimated_cost_usd == 0.0
+    assert response.results[0].url == "https://example.com/coffee"
+    assert response.images[0].url == "https://cdn.example.com/coffee.png"
+    assert response.images[0].source_url == "https://example.com/coffee"
+    assert len(response.images) == 1
+    assert {event.operation for event in ledger.events} == {"web_search", "image_search"}
+    assert all(event.amount_usd == 0.0 for event in ledger.events)
+
+
+def test_searxng_uses_thumbnail_when_full_image_is_missing() -> None:
+    provider = SearXNGProvider("http://search.test")
+
+    async def fake_get_json(params):
+        return {"results": [{
+            "title": "Tea",
+            "thumbnail_src": "https://cdn.example.com/tea-thumb.png",
+            "source": "https://example.com/tea",
+        }]}
+
+    provider._get_json = fake_get_json
+    response = asyncio.run(provider.search("tea", include_images=True))
+
+    assert response.images[0].url == "https://cdn.example.com/tea-thumb.png"
+    assert response.images[0].source_url == "https://example.com/tea"
+
+
+def test_searxng_uses_url_when_no_explicit_image_field_exists() -> None:
+    provider = SearXNGProvider("http://search.test")
+
+    async def fake_get_json(params):
+        return {"results": [{
+            "title": "Tea package",
+            "url": "https://cdn.example.com/tea.png",
+            "source": "https://example.com/tea",
+        }]}
+
+    provider._get_json = fake_get_json
+    response = asyncio.run(provider.search("tea", include_images=True))
+
+    assert response.images[0].url == "https://cdn.example.com/tea.png"
+    assert response.images[0].source_url == "https://example.com/tea"
+
+
+def test_searxng_smoke_check_accepts_normalized_general_and_image_results() -> None:
+    class Provider:
+        async def search(self, query, max_results=10, include_images=False):
+            return SearchResponse(
+                query=query,
+                results=[SearchResult(title="Coffee", url="https://example.com/coffee")],
+                images=[ImageCandidate(url="https://cdn.example.com/coffee.png")],
+                provider="searxng",
+            )
+
+    result = asyncio.run(run_check(Provider()))
+
+    assert result.general_results == 1
+    assert result.image_results == 1
+
+
+def test_searxng_compose_and_settings_enable_json_and_image_search() -> None:
+    root = Path(__file__).resolve().parents[2]
+    compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+    settings = (root / "searxng" / "settings.yml").read_text(encoding="utf-8")
+
+    assert "  searxng:" in compose
+    assert '"8080:8080"' in compose
+    assert "./searxng/settings.yml:/etc/searxng/settings.yml:ro" in compose
+    assert "SEARXNG_BASE_URL: http://searxng:8080" in compose
+    assert "- json" in settings
+    assert "general" in settings
+    assert "images" in settings
+
+
+def test_searxng_is_default_and_needs_no_search_api_key() -> None:
+    settings = Settings(_env_file=None, SEARCH_PROVIDER="searxng")
+
+    provider = get_search_provider(settings)
+
+    assert isinstance(provider, SearXNGProvider)
+    assert provider._base_url == "http://localhost:8080"
+
+
+def test_paid_search_provider_still_requires_api_key() -> None:
+    settings = Settings(_env_file=None, SEARCH_PROVIDER="tavily", SEARCH_API_KEY="")
+
+    assert get_search_provider(settings) is None
 
 
 def _bread_image_brief() -> PairedImageBrief:
@@ -246,6 +374,19 @@ def test_reference_preflight_needs_no_direct_openai_key() -> None:
     )
 
     assert _reference_preflight(settings, "ro") == []
+
+
+def test_reference_preflight_does_not_require_search_key_for_searxng() -> None:
+    settings = Settings(
+        _env_file=None,
+        OPENROUTER_API_KEY="router-key",
+        ELEVENLABS_API_KEY="eleven-key",
+        ELEVENLABS_VOICE_ID_RO="voice-ro",
+        SEARCH_PROVIDER="searxng",
+        SEARCH_API_KEY="",
+    )
+
+    assert "Missing SEARCH_API_KEY" not in _reference_preflight(settings, "ro")
 
 
 def test_one_click_interface_uses_english_copy() -> None:

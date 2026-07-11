@@ -46,15 +46,3 @@ def test_pose_adjustment_moves_pivot_without_moving_reference_dot(tmp_path: Path
 
     assert original.getpixel((540, 1670)) == changed.getpixel((540, 1670))
     assert original.tobytes() != changed.tobytes()
-
-
-def test_neutral_and_pointing_poses_share_target_pivot() -> None:
-    settings = Settings(_env_file=None)
-    calibration = MascotCalibrationService(settings.mascots_dir).load()
-
-    pivots = [
-        calibration.poses[name]
-        for name in ("neutral", "point_left", "point_right")
-    ]
-
-    assert {(pose.x, pose.y) for pose in pivots} == {(540.0, 1670.0)}

@@ -1,0 +1,20 @@
+use_default_settings: true
+
+general:
+  instance_name: "Mascot Poster Search"
+
+search:
+  formats:
+    - html
+    - json
+
+categories_as_tabs:
+  general:
+    - general
+  images:
+    - images
+
+server:
+  secret_key: "ultrasecretkey"
+  limiter: false
+  image_proxy: false

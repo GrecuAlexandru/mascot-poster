@@ -49,7 +49,15 @@ class Settings(BaseSettings):
     elevenlabs_voice_id_ro: str = Field(default="", alias="ELEVENLABS_VOICE_ID_RO")
     elevenlabs_voice_id_en: str = Field(default="", alias="ELEVENLABS_VOICE_ID_EN")
     search_api_key: str = Field(default="", alias="SEARCH_API_KEY")
-    search_provider: str = Field(default="tavily", alias="SEARCH_PROVIDER")
+    search_provider: str = Field(default="searxng", alias="SEARCH_PROVIDER")
+    searxng_base_url: str = Field(
+        default="http://localhost:8080",
+        alias="SEARXNG_BASE_URL",
+    )
+    searxng_timeout_seconds: float = Field(
+        default=30.0,
+        alias="SEARXNG_TIMEOUT_SECONDS",
+    )
     image_model: str = Field(
         default="openai/gpt-image-1-mini",
         alias="OPENROUTER_IMAGE_MODEL",
@@ -234,12 +242,19 @@ def get_tts_provider() -> Optional[object]:
     )
 
 
-def get_search_provider() -> Optional[object]:
-    settings = get_settings()
+def get_search_provider(settings: Optional[Settings] = None) -> Optional[object]:
+    settings = settings or get_settings()
+    provider_name = settings.search_provider.lower()
+    if provider_name == "searxng":
+        from app.providers.search.searxng_provider import SearXNGProvider
+        return SearXNGProvider(
+            base_url=settings.searxng_base_url,
+            timeout=settings.searxng_timeout_seconds,
+        )
     if not settings.search_api_key:
         return None
     from app.providers.search.tavily_provider import SerperProvider, TavilyProvider
-    if settings.search_provider.lower() == "serper":
+    if provider_name == "serper":
         return SerperProvider(api_key=settings.search_api_key)
     return TavilyProvider(api_key=settings.search_api_key)
 
