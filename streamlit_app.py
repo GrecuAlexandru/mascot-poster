@@ -2064,6 +2064,26 @@ REFERENCE_LANGUAGE_LABELS = {
 }
 
 
+def _cost_report_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for event in report.get("events", []):
+        input_units = event.get("input_units", 0)
+        output_units = event.get("output_units", 0)
+        units = input_units + output_units
+        rows.append({
+            "Stage": event.get("stage", ""),
+            "Provider": event.get("provider", ""),
+            "Model": event.get("model", ""),
+            "Operation": event.get("operation", ""),
+            "Units": f"{units:g} {event.get('unit_type', 'calls')}",
+            "Cost kind": event.get("amount_kind", "estimated"),
+            "USD": f"{float(event.get('amount_usd', 0)):.6f}",
+            "Status": event.get("status", "success"),
+            "Cached": bool(event.get("cached", False)),
+        })
+    return rows
+
+
 @st.cache_resource
 def make_reference_generation_service():
     return build_reference_generation_service(get_settings())
@@ -2172,6 +2192,33 @@ def render_reference_page() -> None:
     columns[0].metric("Duration", f"{render.duration_seconds:.1f}s")
     columns[1].metric("Resolution", f"{render.resolution[0]}×{render.resolution[1]}")
     columns[2].metric("Cues", render.scene_count)
+    if render.cost_report_path and render.cost_report_path.exists():
+        cost_report = json.loads(render.cost_report_path.read_text(encoding="utf-8"))
+        st.subheader("Generation cost")
+        cost_columns = st.columns(3)
+        cost_columns[0].metric(
+            "Provider-reported actual",
+            f"${cost_report.get('actual_total_usd', 0):.6f}",
+        )
+        cost_columns[1].metric(
+            "Estimated-only",
+            f"${cost_report.get('estimated_total_usd', 0):.6f}",
+        )
+        cost_columns[2].metric(
+            "Projected total",
+            f"${cost_report.get('projected_total_usd', 0):.6f}",
+        )
+        st.caption(
+            f"{cost_report.get('billable_calls', 0)} billable calls • "
+            f"{cost_report.get('failed_calls', 0)} failed calls • "
+            f"{cost_report.get('retry_calls', 0)} retries • "
+            f"{cost_report.get('cached_calls', 0)} cache hits"
+        )
+        st.dataframe(
+            _cost_report_rows(cost_report),
+            use_container_width=True,
+            hide_index=True,
+        )
     with st.expander("Diagnostic artifacts"):
         for label, path in (
             ("Transcript", render.transcript_path),
@@ -2179,6 +2226,7 @@ def render_reference_page() -> None:
             ("Image provenance", render.image_provenance_path),
             ("Paired image brief", render.paired_image_brief_path),
             ("Quality report", render.quality_report_path),
+            ("Cost report", render.cost_report_path),
         ):
             if path and path.exists():
                 st.download_button(

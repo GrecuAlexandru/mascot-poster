@@ -4,6 +4,7 @@ import json
 import logging
 import base64
 import mimetypes
+import hashlib
 from pathlib import Path
 from typing import Any, Optional, TypeVar
 
@@ -17,6 +18,7 @@ from tenacity import (
 )
 
 from app.providers.llm.base import LLMError, LLMProvider as BaseLLMProvider, LLMRepairError
+from app.services.job_cost_ledger import record_cost_event
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +89,41 @@ class LLMProvider(BaseLLMProvider):
             + (output_tokens / 1_000_000) * out_cost,
             6,
         )
+
+    def _record_usage(
+        self,
+        data: dict[str, Any],
+        operation: str,
+        request_key: str = "",
+    ) -> float:
+        usage = data.get("usage", {}) or {}
+        model = data.get("model", self._model)
+        reported_cost = usage.get("cost")
+        if reported_cost is None:
+            cost = self.estimate_cost(
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                model,
+            )
+            amount_kind = "estimated"
+            pricing_source = "configured_token_rates"
+        else:
+            cost = float(reported_cost)
+            amount_kind = "actual"
+            pricing_source = "provider_usage"
+        record_cost_event(
+            provider=self.name,
+            model=model,
+            operation=operation,
+            input_units=usage.get("prompt_tokens", 0),
+            output_units=usage.get("completion_tokens", 0),
+            unit_type="tokens",
+            amount_usd=cost,
+            amount_kind=amount_kind,
+            pricing_source=pricing_source,
+            request_key=request_key,
+        )
+        return cost
 
     def _build_system_prompt(self, system_prompt: str) -> str:
         if self._skills_content:
@@ -192,6 +229,9 @@ class LLMProvider(BaseLLMProvider):
             temperature,
             max_tokens,
         )
+        request_key = hashlib.sha256(
+            json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
 
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
@@ -201,10 +241,13 @@ class LLMProvider(BaseLLMProvider):
             )
 
         if response.status_code == 429:
+            record_cost_event(provider=self.name, model=self._model, operation="chat_completion", status="failed", pricing_source="request_failed", error="HTTP 429", request_key=request_key)
             raise LLMTransientError("Rate limited")
         if response.status_code >= 500:
+            record_cost_event(provider=self.name, model=self._model, operation="chat_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
             raise LLMTransientError(f"Server error: {response.status_code}")
         if response.status_code != 200:
+            record_cost_event(provider=self.name, model=self._model, operation="chat_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
             raise LLMError(
                 f"LLM API error {response.status_code}: {response.text[:500]}"
             )
@@ -214,11 +257,7 @@ class LLMProvider(BaseLLMProvider):
 
         usage = data.get("usage", {})
         response_model = data.get("model", self._model)
-        cost = self.estimate_cost(
-            usage.get("prompt_tokens", 0),
-            usage.get("completion_tokens", 0),
-            response_model,
-        )
+        cost = self._record_usage(data, "chat_completion", request_key)
         logger.info(
             f"LLM completion [{response_model}]: "
             f"{usage.get('total_tokens', 0)} tokens, ~${cost:.4f}"
@@ -280,6 +319,9 @@ class LLMProvider(BaseLLMProvider):
             temperature,
             max_tokens,
         )
+        request_key = hashlib.sha256(
+            json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -294,10 +336,14 @@ class LLMProvider(BaseLLMProvider):
                 json=body,
             )
         if response.status_code == 429 or response.status_code >= 500:
+            record_cost_event(provider=self.name, model=self._model, operation="vision_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
             raise LLMTransientError(f"Vision model unavailable: {response.status_code}")
         if response.status_code != 200:
+            record_cost_event(provider=self.name, model=self._model, operation="vision_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
             raise LLMError(f"LLM API error {response.status_code}: {response.text[:500]}")
-        content = response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        self._record_usage(data, "vision_completion", request_key)
+        content = data["choices"][0]["message"]["content"]
         try:
             return model_type.model_validate_json(content)
         except (ValidationError, ValueError, json.JSONDecodeError) as exc:

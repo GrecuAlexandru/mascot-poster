@@ -22,7 +22,12 @@ from app.providers.llm.openai_provider import LLMProvider
 from app.services.mascot_asset_preparer import MascotAssetPreparer
 from app.services.mascot_service import MascotService
 from app.services.sfx_service import SfxLibraryService
-from streamlit_app import REFERENCE_LANGUAGE_LABELS, REFERENCE_STAGE_LABELS, _reference_preflight
+from streamlit_app import (
+    REFERENCE_LANGUAGE_LABELS,
+    REFERENCE_STAGE_LABELS,
+    _cost_report_rows,
+    _reference_preflight,
+)
 
 
 def test_tavily_search_body_requests_described_images() -> None:
@@ -249,6 +254,28 @@ def test_one_click_interface_uses_english_copy() -> None:
     assert REFERENCE_STAGE_LABELS["image_brief"] == "Defining the exact paired visuals"
     assert REFERENCE_STAGE_LABELS["image_validation"] == "Selecting and validating product images"
     assert REFERENCE_LANGUAGE_LABELS == {"ro": "Romanian", "en": "English"}
+
+
+def test_cost_report_rows_expose_actual_and_estimated_details() -> None:
+    rows = _cost_report_rows({
+        "events": [{
+            "stage": "tts",
+            "provider": "elevenlabs",
+            "model": "eleven_multilingual_v2",
+            "operation": "synthesize",
+            "input_units": 120,
+            "output_units": 0,
+            "unit_type": "characters",
+            "amount_kind": "estimated",
+            "amount_usd": 0.036,
+            "status": "success",
+            "cached": False,
+        }],
+    })
+
+    assert rows[0]["Cost kind"] == "estimated"
+    assert rows[0]["USD"] == "0.036000"
+    assert rows[0]["Units"] == "120 characters"
 
 
 def test_reference_image_service_prefers_valid_real_candidate(tmp_path: Path) -> None:

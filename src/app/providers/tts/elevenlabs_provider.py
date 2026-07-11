@@ -220,6 +220,7 @@ class ElevenLabsProvider:
                 character_count=character_count,
                 estimated_cost_usd=cost,
                 timed_words=timed_words,
+                cached=True,
             )
 
         logger.info(

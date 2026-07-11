@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from app.domain.enums import MascotAnchor, MascotPose
 from app.domain.models import CompiledVideoSpec, RenderResult
 
 
@@ -29,6 +30,7 @@ class ReferenceQualityService:
             problems.append("Production render uses fixture image asset")
         problems.extend(self._caption_problems(spec))
         problems.extend(self._sfx_problems(spec))
+        problems.extend(self._direction_problems(spec))
         problems.extend(self._visual_problems(result.poster_path))
         return problems
 
@@ -64,4 +66,14 @@ class ReferenceQualityService:
         ]
         if any(min(pixel) < 240 for pixel in corners):
             return ["Reference poster background is not white"]
+        return []
+
+    @staticmethod
+    def _direction_problems(spec: CompiledVideoSpec) -> list[str]:
+        if any(cue.mascot_anchor != MascotAnchor.CENTER for cue in spec.direction_cues):
+            return ["Reference mascot direction changes its calibrated anchor"]
+        if spec.direction_cues and all(
+            cue.mascot_pose == MascotPose.NEUTRAL for cue in spec.direction_cues
+        ):
+            return ["Reference mascot direction uses only the neutral pose"]
         return []

@@ -23,6 +23,7 @@ class TTSResult(BaseModel):
     character_count: int
     estimated_cost_usd: float
     timed_words: Optional[list["TimedWord"]] = None
+    cached: bool = False
 
     model_config = {"arbitrary_types_allowed": True}
 

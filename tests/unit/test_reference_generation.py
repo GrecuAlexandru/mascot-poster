@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from app.domain.enums import Focus, MascotAnchor, MascotPose
@@ -95,6 +96,55 @@ def test_reference_direction_service_returns_word_anchored_cues() -> None:
     assert result.cues[0].word_index == 1
 
 
+def test_direction_service_replaces_all_neutral_anchor_travel() -> None:
+    class AllNeutralLLM:
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            return DirectionPlan(cues=[
+                DirectionCue(
+                    beat_id="left",
+                    word_index=0,
+                    mascot_pose=MascotPose.NEUTRAL,
+                    mascot_anchor=MascotAnchor.LEFT,
+                    product_focus=Focus.LEFT,
+                ),
+                DirectionCue(
+                    beat_id="right",
+                    word_index=0,
+                    mascot_pose=MascotPose.NEUTRAL,
+                    mascot_anchor=MascotAnchor.RIGHT,
+                    product_focus=Focus.RIGHT,
+                ),
+            ])
+
+    script = ReferenceScriptPackage(
+        title="Cafea vs Ceai",
+        left_item="Cafea",
+        right_item="Ceai",
+        hook="Comparația contează.",
+        beats=[
+            NarrationBeat(id="left", text="Cafeaua acționează rapid.", pause_after_ms=300),
+            NarrationBeat(id="right", text="Ceaiul acționează mai blând.", pause_after_ms=300),
+        ],
+        closing=NarrationBeat(
+            id="closing",
+            text="Așadar, alege băutura potrivită pentru ritmul și nevoile tale.",
+            pause_after_ms=750,
+        ),
+        caption="Cafea sau ceai?",
+    )
+
+    result = asyncio.run(ReferenceDirectionService(AllNeutralLLM()).generate(script, "ro"))
+
+    assert all(cue.mascot_anchor == MascotAnchor.CENTER for cue in result.cues)
+    assert any(cue.mascot_pose != MascotPose.NEUTRAL for cue in result.cues)
+    assert any(cue.mascot_pose == MascotPose.POINT_LEFT for cue in result.cues)
+    assert any(cue.mascot_pose == MascotPose.POINT_RIGHT for cue in result.cues)
+    assert max(
+        sum(candidate.beat_id == beat.id for candidate in result.cues)
+        for beat in script.all_beats
+    ) <= 2
+
+
 def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> None:
     class TopicGenerator:
         def __init__(self) -> None:
@@ -137,7 +187,11 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
             )])
 
     class TTS:
+        def __init__(self) -> None:
+            self.settings = None
+
         async def synthesize(self, script, voice_id, language, output_dir, settings=None):
+            self.settings = settings
             output_dir.mkdir(parents=True, exist_ok=True)
             audio = output_dir / "narration.wav"
             audio.write_bytes(b"audio")
@@ -198,6 +252,7 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
 
     topic = TopicGenerator()
     renderer = Renderer()
+    tts = TTS()
     service = VideoGenerationService(
         output_base=tmp_path / "jobs",
         topic_generator=topic,
@@ -205,7 +260,7 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
         script_writer=ScriptWriter(),
         verifier=Verifier(),
         director=Director(),
-        beat_tts=TTS(),
+        beat_tts=tts,
         image_service=Images(),
         audio_service=Audio(),
         sfx_service=Sfx(),
@@ -223,8 +278,14 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
     assert second.render_result.video_path == first.render_result.video_path
     assert topic.calls == 1
     assert renderer.calls == 1
+    assert tts.settings.speed == pytest.approx(0.8)
     assert "quality" in state["completed"]
     assert stages[0] == "preflight"
+    assert first.render_result.cost_report_path == tmp_path / "jobs" / "job-1" / "cost_report.json"
+    report = json.loads(first.render_result.cost_report_path.read_text(encoding="utf-8"))
+    assert report["job_id"] == "job-1"
+    assert report["by_stage"]["render"] == 0.0
+    assert len(report["events"]) == len({event["event_id"] for event in report["events"]})
 
 
 def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_path: Path) -> None:

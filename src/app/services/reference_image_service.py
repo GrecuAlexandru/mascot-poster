@@ -11,6 +11,7 @@ from app.domain.models import ProductImageBrief
 from app.providers.images.openai_provider import RemoteImageProvider
 from app.providers.search.base import ImageCandidate
 from app.services.reference_image_validator import ImageValidationResult
+from app.services.job_cost_ledger import record_cost_event
 
 
 class ImageAttempt(BaseModel):
@@ -90,6 +91,15 @@ class ReferenceImageService:
             candidate_path = output_path.parent / f".{output_path.stem}_candidate_{index}.png"
             try:
                 await self.downloader.download(candidate.url, candidate_path)
+                record_cost_event(
+                    provider=getattr(self.downloader, "name", "remote_download"),
+                    operation="image_download",
+                    input_units=1,
+                    unit_type="downloads",
+                    amount_usd=0.0,
+                    pricing_source="no_incremental_api_cost",
+                    request_key=candidate.url,
+                )
                 if not self._is_usable(candidate_path):
                     attempts.append(ImageAttempt(
                         source_type="real",
@@ -132,6 +142,17 @@ class ReferenceImageService:
                 self._save_provenance(provenance, provenance_path)
                 return provenance
             except Exception as error:
+                record_cost_event(
+                    provider=getattr(self.downloader, "name", "remote_download"),
+                    operation="image_download",
+                    input_units=1,
+                    unit_type="downloads",
+                    amount_usd=0.0,
+                    pricing_source="request_failed",
+                    status="failed",
+                    error=f"{type(error).__name__}: {error}",
+                    request_key=candidate.url,
+                )
                 attempts.append(ImageAttempt(
                     source_type="real",
                     image_url=candidate.url,

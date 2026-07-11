@@ -16,6 +16,7 @@ from tenacity import (
 
 from app.providers.images.base import GeneratedImage
 from app.providers.images.openai_provider import OpenAIImageError, OpenAIImageTransientError
+from app.services.job_cost_ledger import record_cost_event
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,16 @@ class OpenRouterImageProvider:
         if cached:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(cached.read_bytes())
+            record_cost_event(
+                provider=self.name,
+                model=self._model,
+                operation="image_generation",
+                unit_type="images",
+                amount_usd=0.0,
+                pricing_source="cache_hit",
+                cached=True,
+                request_key=key,
+            )
             return GeneratedImage(
                 path=output_path,
                 prompt=prompt,
@@ -114,12 +125,15 @@ class OpenRouterImageProvider:
                 json=self._build_generation_body(prompt, width, height),
             )
         if response.status_code == 429:
+            record_cost_event(provider=self.name, model=self._model, operation="image_generation", status="failed", pricing_source="request_failed", error="HTTP 429", request_key=key)
             raise OpenAIImageTransientError("OpenRouter image request was rate limited")
         if response.status_code >= 500:
+            record_cost_event(provider=self.name, model=self._model, operation="image_generation", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=key)
             raise OpenAIImageTransientError(
                 f"OpenRouter image server error: {response.status_code}"
             )
         if response.status_code != 200:
+            record_cost_event(provider=self.name, model=self._model, operation="image_generation", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=key)
             raise OpenAIImageError(
                 f"OpenRouter image API error {response.status_code}: {response.text[:500]}"
             )
@@ -133,7 +147,19 @@ class OpenRouterImageProvider:
         output_path.write_bytes(image_data)
         if self._cache_dir:
             (self._cache_dir / f"{key}.png").write_bytes(image_data)
-        cost = float(data.get("usage", {}).get("cost", self.estimate_cost(1)))
+        reported_cost = data.get("usage", {}).get("cost")
+        cost = float(reported_cost if reported_cost is not None else self.estimate_cost(1))
+        record_cost_event(
+            provider=self.name,
+            model=self._model,
+            operation="image_generation",
+            input_units=1,
+            unit_type="images",
+            amount_usd=cost,
+            amount_kind="actual" if reported_cost is not None else "estimated",
+            pricing_source="provider_usage" if reported_cost is not None else "configured_image_rate",
+            request_key=key,
+        )
         logger.info("OpenRouter image generated: %s, ~$%.4f", output_path.name, cost)
         return GeneratedImage(
             path=output_path,

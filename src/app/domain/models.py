@@ -270,6 +270,7 @@ class RenderResult(BaseModel):
     paired_image_brief_path: Optional[Path] = None
     calibration_path: Optional[Path] = None
     quality_report_path: Optional[Path] = None
+    cost_report_path: Optional[Path] = None
     duration_seconds: float
     frame_count: int
     resolution: tuple[int, int]
@@ -463,3 +464,41 @@ class CostRecord(BaseModel):
     units: float
     unit_type: str
     estimated_cost_usd: float
+
+
+class CostEvent(BaseModel):
+    event_id: str
+    job_id: str
+    timestamp_utc: str
+    stage: str
+    provider: str
+    model: str = ""
+    operation: str
+    input_units: float = 0.0
+    output_units: float = 0.0
+    unit_type: str = "calls"
+    amount_usd: float = Field(default=0.0, ge=0.0)
+    amount_kind: Literal["actual", "estimated"] = "estimated"
+    pricing_source: str = "estimate"
+    attempt: int = Field(default=1, ge=1)
+    status: Literal["success", "failed"] = "success"
+    cached: bool = False
+    error: Optional[str] = None
+    request_key: str = ""
+
+
+class CostReport(BaseModel):
+    job_id: str
+    events: list[CostEvent] = Field(default_factory=list)
+    actual_total_usd: float = 0.0
+    estimated_total_usd: float = 0.0
+    projected_total_usd: float = 0.0
+    by_provider: dict[str, float] = Field(default_factory=dict)
+    by_stage: dict[str, float] = Field(default_factory=dict)
+    by_operation: dict[str, float] = Field(default_factory=dict)
+    by_model: dict[str, float] = Field(default_factory=dict)
+    by_amount_kind: dict[str, float] = Field(default_factory=dict)
+    billable_calls: int = 0
+    failed_calls: int = 0
+    cached_calls: int = 0
+    retry_calls: int = 0

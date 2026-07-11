@@ -228,6 +228,7 @@ def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
             "direction.json",
             "provenance.json",
             "quality.json",
+            "cost.json",
         )
     }
     for path in paths.values():
@@ -241,6 +242,7 @@ def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
         direction_path=paths["direction.json"],
         image_provenance_path=paths["provenance.json"],
         quality_report_path=paths["quality.json"],
+        cost_report_path=paths["cost.json"],
         duration_seconds=26.8,
         frame_count=804,
         resolution=(1080, 1920),
@@ -249,6 +251,7 @@ def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
     result = GenerationResult(job_id="job-1", render_result=render)
 
     assert result.render_result.transcript_path == paths["transcript.json"]
+    assert result.render_result.cost_report_path == paths["cost.json"]
     assert result.job_id == "job-1"
 
 
@@ -546,6 +549,12 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
         right_image=right,
         narration_audio=audio,
         transcript=transcript,
+        direction_cues=[AbsoluteDirectionCue(
+            start=0.0,
+            mascot_pose=MascotPose.POINT_LEFT,
+            mascot_anchor=MascotAnchor.CENTER,
+            product_focus=Focus.LEFT,
+        )],
         captions=[
             CaptionCue(words=["Cafeaua"], active_word_index=0, start=0.0, end=0.4),
             CaptionCue(words=["Cafeaua", "ajută."], active_word_index=1, start=0.4, end=25.0),
@@ -572,6 +581,14 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
     quality = ReferenceQualityService(FakeMediaQuality())
 
     assert quality.validate(spec, result) == []
+    moving_spec = spec.model_copy(update={
+        "direction_cues": [spec.direction_cues[0].model_copy(update={
+            "mascot_anchor": MascotAnchor.LEFT,
+        })],
+    })
+    assert quality.validate(moving_spec, result) == [
+        "Reference mascot direction changes its calibrated anchor"
+    ]
     short_result = result.model_copy(update={"duration_seconds": 25.0})
     assert quality.validate(spec, short_result) == [
         "Final duration 25.000s does not match compiled duration 26.800s"

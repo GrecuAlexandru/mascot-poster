@@ -18,6 +18,8 @@ python -m streamlit run streamlit_app.py
 
 Open the URL shown in the terminal, usually http://localhost:8501. Choose optional advanced settings and press **Generate video**. The final result includes the video, poster, exact transcript, direction timeline, paired-image brief, complete image-attempt provenance, and quality report. Failed jobs resume from their last completed checkpoint.
 
+Reference videos use a stationary calibrated mascot pivot, expressive beat-level poses, and ElevenLabs speech speed `0.8`. The result also includes `cost_report.json`, with every OpenRouter, search, image, and ElevenLabs call. Provider-reported charges are labeled `actual`; pricing-derived amounts are labeled `estimated`. Streamlit displays both totals and the complete per-call ledger after generation.
+
 The FastAPI server remains available for headless and integration use:
 
 ```powershell

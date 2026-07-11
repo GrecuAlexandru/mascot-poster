@@ -19,6 +19,13 @@ from app.domain.models import (
     TopicSpec,
     VerificationResult,
 )
+from app.providers.tts.base import TTSSettings
+from app.services.job_cost_ledger import (
+    JobCostLedger,
+    cost_scope,
+    record_cost_event,
+    set_cost_stage,
+)
 
 
 class _CheckpointStore:
@@ -134,6 +141,10 @@ class VideoGenerationService:
         job_id = job_id or str(uuid4())
         job_dir = self.output_base / job_id
         checkpoint = _CheckpointStore(job_dir)
+        cost_report_path = job_dir / "cost_report.json"
+        cost_ledger = JobCostLedger.load(cost_report_path, job_id)
+        scope = cost_scope(cost_ledger, "preflight")
+        scope.__enter__()
         stage = "preflight"
         try:
             await self._announce(progress_callback, stage)
@@ -280,6 +291,7 @@ class VideoGenerationService:
                         request.voice_id or "",
                         request.language,
                         audio_dir,
+                        settings=TTSSettings(speed=0.8),
                     )
                     if self._duration_is_acceptable(transcript.duration_seconds):
                         break
@@ -313,6 +325,13 @@ class VideoGenerationService:
             else:
                 timeline = self.timeline_compiler.compile(direction, transcript)
                 library = self.sfx_service.ensure_library(job_dir / "assets" / "sfx")
+                record_cost_event(
+                    provider="local",
+                    operation="sfx_generation",
+                    amount_usd=0.0,
+                    pricing_source="local_operation",
+                    request_key="sfx_library",
+                )
                 mixed_audio = job_dir / "audio" / "mixed_audio.m4a"
                 narration_end_seconds = transcript.duration_seconds
                 total_duration_seconds = narration_end_seconds + 1.8
@@ -343,9 +362,17 @@ class VideoGenerationService:
                 render_result = RenderResult.model_validate(checkpoint.load(stage))
             else:
                 render_result = self.renderer.render(compiled, job_dir)
+                record_cost_event(
+                    provider="local",
+                    operation="render",
+                    amount_usd=0.0,
+                    pricing_source="local_operation",
+                    request_key="reference_render",
+                )
                 render_result = render_result.model_copy(update={
                     "image_provenance_path": provenance_path,
                     "paired_image_brief_path": paired_image_brief_path,
+                    "cost_report_path": cost_report_path,
                 })
                 checkpoint.save(stage, render_result)
 
@@ -379,12 +406,17 @@ class VideoGenerationService:
                 "quality_report_path": quality_report_path,
                 "image_provenance_path": provenance_path,
                 "paired_image_brief_path": paired_image_brief_path,
+                "cost_report_path": cost_report_path,
             })
             checkpoint.save("render", render_result)
+            cost_ledger.save(cost_report_path)
             return GenerationResult(job_id=job_id, render_result=render_result)
         except Exception as error:
             checkpoint.fail(stage, error)
             raise
+        finally:
+            cost_ledger.save(cost_report_path)
+            scope.__exit__(None, None, None)
 
     def _validate_dependencies(self) -> None:
         dependencies = {
@@ -470,6 +502,7 @@ class VideoGenerationService:
 
     @staticmethod
     async def _announce(callback: Optional[Callable[[str], Any]], stage: str) -> None:
+        set_cost_stage(stage)
         if callback is None:
             return
         result = callback(stage)

@@ -10,6 +10,7 @@ from app.domain.models import (
     TimedWord,
 )
 from app.providers.tts.base import TTSSettings
+from app.services.job_cost_ledger import record_cost_event
 
 
 class BeatTTSService:
@@ -35,14 +36,42 @@ class BeatTTSService:
 
         for index, beat in enumerate(script.all_beats):
             segment_path = output_dir / f"beat_{index:02d}.mp3"
-            result = await self.provider.synthesize(
-                text=beat.text,
-                voice_id=voice_id,
-                language=language,
-                output_path=segment_path,
-                settings=settings,
-                previous_text=previous_text or None,
-                seed=42,
+            request_key = f"{beat.id}:{beat.text}"
+            try:
+                result = await self.provider.synthesize(
+                    text=beat.text,
+                    voice_id=voice_id,
+                    language=language,
+                    output_path=segment_path,
+                    settings=settings,
+                    previous_text=previous_text or None,
+                    seed=42,
+                )
+            except Exception as error:
+                record_cost_event(
+                    provider=getattr(self.provider, "name", "tts"),
+                    model=settings.model_id,
+                    operation="synthesize",
+                    input_units=len(beat.text),
+                    unit_type="characters",
+                    amount_usd=0.0,
+                    pricing_source="request_failed",
+                    status="failed",
+                    error=f"{type(error).__name__}: {error}",
+                    request_key=request_key,
+                )
+                raise
+            record_cost_event(
+                provider=result.provider,
+                model=result.model,
+                operation="synthesize",
+                input_units=result.character_count,
+                unit_type="characters",
+                amount_usd=0.0 if result.cached else result.estimated_cost_usd,
+                amount_kind="estimated",
+                pricing_source="cache_hit" if result.cached else "provider_estimate",
+                cached=result.cached,
+                request_key=request_key,
             )
             words = result.timed_words or self._proportional_words(
                 beat.text,

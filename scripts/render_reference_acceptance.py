@@ -70,12 +70,26 @@ def main() -> None:
         narration_audio=audio,
         transcript=transcript,
         narration_end_seconds=22.0,
-        direction_cues=[AbsoluteDirectionCue(
-            start=0.0,
-            mascot_pose=MascotPose.NEUTRAL,
-            mascot_anchor=MascotAnchor.CENTER,
-            product_focus=Focus.NEUTRAL,
-        )],
+        direction_cues=[
+            AbsoluteDirectionCue(
+                start=0.0,
+                mascot_pose=MascotPose.NEUTRAL,
+                mascot_anchor=MascotAnchor.CENTER,
+                product_focus=Focus.NEUTRAL,
+            ),
+            AbsoluteDirectionCue(
+                start=7.0,
+                mascot_pose=MascotPose.POINT_LEFT,
+                mascot_anchor=MascotAnchor.CENTER,
+                product_focus=Focus.LEFT,
+            ),
+            AbsoluteDirectionCue(
+                start=14.0,
+                mascot_pose=MascotPose.POINT_RIGHT,
+                mascot_anchor=MascotAnchor.CENTER,
+                product_focus=Focus.RIGHT,
+            ),
+        ],
         sound_cues=[SoundEffectCue(start=22.0, kind=SfxKind.CTA_STING)],
         captions=TimelineCompiler().compile_captions(transcript),
     )

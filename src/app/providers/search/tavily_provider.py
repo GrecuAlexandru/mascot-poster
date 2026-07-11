@@ -12,6 +12,7 @@ from tenacity import (
 )
 
 from app.providers.search.base import ImageCandidate, SearchProvider, SearchResponse, SearchResult
+from app.services.job_cost_ledger import record_cost_event
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +82,13 @@ class TavilyProvider:
             )
 
         if response.status_code == 429:
+            record_cost_event(provider=self.name, operation="search", status="failed", pricing_source="request_failed", error="HTTP 429", request_key=query)
             raise TavilyTransientError("Rate limited")
         if response.status_code >= 500:
+            record_cost_event(provider=self.name, operation="search", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=query)
             raise TavilyTransientError(f"Server error: {response.status_code}")
         if response.status_code != 200:
+            record_cost_event(provider=self.name, operation="search", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=query)
             raise TavilyError(
                 f"Tavily API error {response.status_code}: {response.text[:500]}"
             )
@@ -131,6 +135,16 @@ class TavilyProvider:
                     seen.add(url)
 
         cost = self.estimate_cost(1)
+        record_cost_event(
+            provider=self.name,
+            operation="search",
+            input_units=1,
+            unit_type="queries",
+            amount_usd=cost,
+            amount_kind="estimated",
+            pricing_source="configured_query_rate",
+            request_key=query,
+        )
         logger.info(
             f"Tavily search: '{query}' → {len(results)} results, ~${cost:.4f}"
         )
@@ -180,10 +194,13 @@ class SerperProvider:
             )
 
         if response.status_code == 429:
+            record_cost_event(provider=self.name, operation="search", status="failed", pricing_source="request_failed", error="HTTP 429", request_key=query)
             raise TavilyTransientError("Rate limited")
         if response.status_code >= 500:
+            record_cost_event(provider=self.name, operation="search", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=query)
             raise TavilyTransientError(f"Server error: {response.status_code}")
         if response.status_code != 200:
+            record_cost_event(provider=self.name, operation="search", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=query)
             raise TavilyError(
                 f"Serper API error {response.status_code}: {response.text[:500]}"
             )
@@ -199,6 +216,16 @@ class SerperProvider:
             ))
 
         cost = self.estimate_cost(1)
+        record_cost_event(
+            provider=self.name,
+            operation="search",
+            input_units=1,
+            unit_type="queries",
+            amount_usd=cost,
+            amount_kind="estimated",
+            pricing_source="configured_query_rate",
+            request_key=query,
+        )
         logger.info(
             f"Serper search: '{query}' → {len(results)} results, ~${cost:.4f}"
         )
