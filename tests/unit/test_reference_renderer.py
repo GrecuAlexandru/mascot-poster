@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 from app.domain.enums import Focus, MascotAnchor, MascotPose
@@ -16,6 +17,7 @@ from app.domain.models import (
 )
 from app.rendering.reference_renderer import ReferenceRenderer
 from app.rendering.ffmpeg import FFmpegRunner
+from app.rendering.text_layout import measure_text
 from app.services.reference_render_service import ReferenceRenderService
 
 
@@ -37,6 +39,135 @@ def _make_mascot_assets(directory: Path) -> None:
         mascot = Image.new("RGBA", (768, 768), (255, 255, 255, 0))
         ImageDraw.Draw(mascot).ellipse((180, 120, 588, 700), fill=(230, 130, 30, 255))
         mascot.save(directory / name)
+
+
+def _caption_renderer(tmp_path: Path) -> ReferenceRenderer:
+    mascot_dir = tmp_path / "mascot"
+    _make_mascot_assets(mascot_dir)
+    return ReferenceRenderer(
+        templates_dir=Path(__file__).resolve().parents[2] / "templates",
+        mascots_dir=mascot_dir,
+    )
+
+
+def test_reference_caption_layout_uses_compact_one_or_two_rows(tmp_path: Path) -> None:
+    renderer = _caption_renderer(tmp_path)
+    region = renderer.template.region("caption")
+
+    _, one_word_lines = renderer._caption_layout(["Natural"], region)
+    _, two_word_lines = renderer._caption_layout(["Aromă", "pură"], region)
+    _, three_word_lines = renderer._caption_layout(["Are", "aromă", "naturală"], region)
+    _, four_word_lines = renderer._caption_layout(
+        ["Avem", "zahăr", "vanilat", "natural"],
+        region,
+    )
+
+    assert one_word_lines == [["Natural"]]
+    assert two_word_lines == [["Aromă", "pură"]]
+    assert three_word_lines == [["Are", "aromă"], ["naturală"]]
+    assert four_word_lines == [["Avem", "zahăr"], ["vanilat", "natural"]]
+
+
+def test_reference_caption_uses_one_fixed_highlight_color(tmp_path: Path) -> None:
+    renderer = _caption_renderer(tmp_path)
+
+    assert getattr(renderer, "caption_word_gap_ratio", None) == 0.52
+    assert getattr(renderer, "caption_line_height_ratio", None) == 1.38
+    assert getattr(renderer, "caption_highlight_color", None) == (232, 117, 96)
+
+
+def test_reference_renderer_uses_bold_italic_font_for_object_labels(tmp_path: Path) -> None:
+    renderer = _caption_renderer(tmp_path)
+
+    assert renderer._label_font_path == Path("C:/Windows/Fonts/arialbi.ttf")
+
+
+def test_reference_renderer_draws_one_fixed_card_behind_only_the_active_caption_word(
+    tmp_path: Path,
+) -> None:
+    renderer = _caption_renderer(tmp_path)
+    canvas = Image.new("RGBA", (1080, 1920), "white")
+    region = renderer.template.region("caption")
+    assert region.y == 780
+    cue = CaptionCue(words=["Dar", "care"], active_word_index=0, start=0.0, end=0.5)
+    font, _ = renderer._caption_layout(cue.words, region)
+    widths = [measure_text(word, font)[0] for word in cue.words]
+    gap = round(font.size * 0.52)
+    line_width = sum(widths) + gap
+    x = region.center[0] - line_width // 2
+    y = region.center[1] - round(font.size * 1.38) // 2
+    padding_y = max(10, font.size // 9)
+
+    renderer._draw_caption(ImageDraw.Draw(canvas), cue)
+
+    active_card = canvas.getpixel((x + widths[0] // 2, y - padding_y + 3))
+    second_x = x + widths[0] + gap
+    inactive_background = canvas.getpixel(
+        (second_x + widths[1] // 2, y - padding_y + 3),
+    )
+    below_card = canvas.getpixel((x + widths[0] // 2, y + measure_text("Ag", font)[1] + padding_y + 5))
+
+    assert active_card == (232, 117, 96, 255)
+    assert inactive_background == (255, 255, 255, 255)
+    assert below_card == (255, 255, 255, 255)
+
+
+def test_reference_renderer_equalizes_product_extent_and_centers_each_half(tmp_path: Path) -> None:
+    mascot_dir = tmp_path / "mascot"
+    _make_mascot_assets(mascot_dir)
+    left = tmp_path / "left.png"
+    right = tmp_path / "right.png"
+    audio = tmp_path / "audio.wav"
+    left_image = Image.new("RGBA", (1024, 1024), (255, 255, 255, 0))
+    right_image = Image.new("RGBA", (1024, 1024), (255, 255, 255, 0))
+    ImageDraw.Draw(left_image).rectangle((212, 162, 811, 861), fill=(240, 20, 20, 255))
+    ImageDraw.Draw(right_image).rectangle((312, 212, 711, 811), fill=(20, 20, 240, 255))
+    left_image.save(left)
+    right_image.save(right)
+    audio.write_bytes(b"audio")
+    transcript = TimedTranscript(
+        words=[TimedWord(word="Test", start=0.0, end=0.5)],
+        beats=[TimedBeat(id="b0", start=0.0, end=0.5, pause_end=0.5)],
+        duration_seconds=0.5,
+    )
+    spec = CompiledVideoSpec(
+        left_label="Left",
+        right_label="Right",
+        left_image=left,
+        right_image=right,
+        narration_audio=audio,
+        transcript=transcript,
+    )
+    renderer = ReferenceRenderer(
+        templates_dir=Path(__file__).resolve().parents[2] / "templates",
+        mascots_dir=mascot_dir,
+    )
+
+    frame = renderer.compose_frame(spec, 0.0).convert("RGB")
+
+    def color_bbox(color: tuple[int, int, int]) -> tuple[int, int, int, int]:
+        mask = Image.new("1", frame.size)
+        mask.putdata([pixel == color for pixel in frame.get_flattened_data()])
+        bbox = mask.getbbox()
+        assert bbox is not None
+        return bbox
+
+    left_bbox = color_bbox((240, 20, 20))
+    right_bbox = color_bbox((20, 20, 240))
+    left_size = (left_bbox[2] - left_bbox[0], left_bbox[3] - left_bbox[1])
+    right_size = (right_bbox[2] - right_bbox[0], right_bbox[3] - right_bbox[1])
+
+    assert max(left_size) == pytest.approx(max(right_size), abs=1)
+    assert ((left_bbox[0] + left_bbox[2]) / 2, (left_bbox[1] + left_bbox[3]) / 2) == pytest.approx((270, 325), abs=1)
+    assert ((right_bbox[0] + right_bbox[2]) / 2, (right_bbox[1] + right_bbox[3]) / 2) == pytest.approx((810, 325), abs=1)
+
+
+def test_reference_renderer_uses_a_tail_free_cta_card(tmp_path: Path) -> None:
+    renderer = _caption_renderer(tmp_path)
+
+    card, anchor_y = renderer._build_speech_bubble("Like, share, follow")
+
+    assert anchor_y == card.height
 
 
 def test_reference_renderer_uses_white_canvas_and_local_product_focus(tmp_path: Path) -> None:
@@ -83,10 +214,11 @@ def test_reference_renderer_uses_white_canvas_and_local_product_focus(tmp_path: 
     assert renderer.product_scale_at(spec, 0.18, Focus.RIGHT) == 1.0
     assert renderer.mascot_x_at(spec, 0.09) < 540
     assert renderer.mascot_pivot_at(spec, 0.18) == (320.0, 1660.0)
+    assert renderer.mascot_pivot_at(spec, 0.0) == (320.0, 1660.0)
     assert not renderer.cta_visible_at(spec, 0.499)
-    assert renderer.cta_visible_at(spec, 0.5)
+    assert not renderer.cta_visible_at(spec, 0.5)
     assert frame.crop((120, 700, 960, 920)).getbbox() is not None
-    assert len(list(renderer.iter_frames(spec))) == math.ceil(2.3 * 30)
+    assert len(list(renderer.iter_frames(spec))) == math.ceil(0.5 * 30)
 
 
 def test_ffmpeg_raw_encoder_command_accepts_rgb_frame_pipe(tmp_path: Path) -> None:
@@ -140,7 +272,7 @@ def test_reference_render_service_streams_dynamic_frames_and_writes_artifacts(tm
     ffmpeg = FakeFFmpeg()
     result = ReferenceRenderService(renderer, ffmpeg).render(spec, tmp_path / "output")
 
-    assert ffmpeg.frames == 69
+    assert ffmpeg.frames == 15
     assert result.video_path.read_bytes() == b"final-video"
     assert result.poster_path.exists()
     assert result.contact_sheet_path.exists()

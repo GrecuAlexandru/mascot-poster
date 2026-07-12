@@ -49,15 +49,16 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
         or research_llm is None
         or script_llm is None
         or direction_llm is None
-        or vision_llm is None
     ):
-        raise RuntimeError("OpenRouter model configuration is incomplete")
+        raise RuntimeError("Text model configuration is incomplete")
     if search is None:
         raise RuntimeError("Search provider configuration is incomplete")
     if tts is None:
         raise RuntimeError("ElevenLabs configuration is incomplete")
     if image_provider is None:
         raise RuntimeError("OpenRouter image configuration is incomplete")
+    if vision_llm is None:
+        raise RuntimeError("Search-image validation configuration is incomplete")
 
     audio_service = AudioService(
         settings.ffmpeg_bin,
@@ -85,6 +86,7 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
             search_provider=search,
             generated_provider=image_provider,
             validator=ReferenceImageValidator(vision_llm),
+            max_candidates=3,
         ),
         audio_service=audio_service,
         sfx_service=SfxLibraryService(settings.audio_sample_rate),
@@ -94,5 +96,5 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
             QualityService(settings.ffmpeg_bin, settings.ffprobe_bin),
         ),
         image_brief_service=ReferenceImageBriefService(direction_llm),
-        image_validator=ReferenceImageValidator(vision_llm),
+        image_validator=None,
     )

@@ -43,7 +43,15 @@ class ReferenceTopicGenerator:
             previous_topics = self.history.get_topic_titles()
         candidate = await self.llm.complete_structured(
             "You generate one fact-focused comparison topic as structured JSON.",
-            "Generate one broad, visual, Romanian-friendly comparison that is not in this history: "
+            "Generate one broad, visual, Romanian-friendly comparison that is not in this history. "
+            "Both sides must be concrete physical objects, products, foods, materials, devices, "
+            "buildings, vehicles, plants, or animals that an image model can show clearly. Do not "
+            "generate abstract concepts, writing styles, SEO strategies, behaviors, processes, or "
+            "other ideas that would need readable paragraphs, URLs, warning labels, charts, diagrams, "
+            "brand logos, or interface copy to recognize. The left and right fields must each be a "
+            "short physical item name of at most four "
+            "words (e.g. 'Șampon solid', 'Ciorbă fierbinte') — put every explanation, qualifier, "
+            "and detail in the angle field instead, never in left, right, or title. History: "
             + "; ".join(previous_topics[:30]),
             TopicCandidate,
             schema_name="reference_topic",

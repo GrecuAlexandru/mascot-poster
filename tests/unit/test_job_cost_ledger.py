@@ -13,7 +13,7 @@ from app.services.job_cost_ledger import (
 )
 from app.providers.llm.openai_provider import LLMProvider
 from app.providers.tts.base import TTSResult, TimedWord, TTSSettings
-from app.domain.models import NarrationBeat, ReferenceScriptPackage
+from app.domain.models import ClosingBeat, NarrationBeat, ReferenceScriptPackage
 from app.services.beat_tts_service import BeatTTSService
 
 
@@ -196,7 +196,7 @@ def test_beat_tts_records_one_estimated_event_per_beat(tmp_path: Path) -> None:
         right_item="B",
         hook="Hook",
         beats=[NarrationBeat(id="b0", text="First beat.", pause_after_ms=300)],
-        closing=NarrationBeat(
+        closing=ClosingBeat(
             id="closing",
             text="Therefore choose the option that fits your needs best.",
             pause_after_ms=500,

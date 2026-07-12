@@ -26,10 +26,21 @@ class ReferenceDirectionService:
         )
         user = (
             f"Language: {language}. Available poses: {', '.join(pose.value for pose in MascotPose)}. "
+            f"On screen, the LEFT side shows '{script.left_item}' and the RIGHT side shows "
+            f"'{script.right_item}'. Directions are from the viewer's perspective: when a beat talks "
+            "about the left-side item use product_focus left, and when it talks about the right-side "
+            "item use product_focus right. "
             "Always use mascot_anchor center so the calibrated feet never move. Use product_focus left, "
-            "right, both, or neutral. Use point_left or point_up_left with left focus and point_right or "
-            "point_up_right with right focus. Use varied expressive poses for hook, explanation, warning, "
-            "idea, and conclusion beats. Use one cue per beat and never more than two. Use pose_pop for "
+            "right, both, or neutral. For left focus use point_up_left and for right focus use "
+            "point_up_right, so the mascot looks up toward the item it talks about. Use varied "
+            "expressive poses for hook, explanation, warning, "
+            "idea, and conclusion beats. When one beat discusses BOTH products, return exactly two cues: "
+            "one on the first word naming the left product with point_up_left and left focus, then one on "
+            "the first word naming the right product with point_up_right and right focus. Example: for "
+            "'Coffee is bitter. Tea is mild.' return Coffee/point_up_left/left and Tea/point_up_right/right. "
+            "Incorrect: one left cue for the whole beat. Incorrect: repeating point_up_left across several "
+            "beats that also describe the right product. For a one-sided beat, use one cue; never use more "
+            "than two cues per non-hook beat. Use pose_pop for "
             "pose swaps and focus_tick for focus-only changes. Never return an all-neutral plan.\nBeat words:\n"
             f"{chr(10).join(beat_lines)}"
         )
@@ -41,7 +52,9 @@ class ReferenceDirectionService:
             temperature=0.2,
             max_tokens=2200,
         )
-        normalized = self.validator.normalize(plan)
+        normalized = self.validator.normalize(
+            self.validator.align_with_script(plan, script)
+        )
         problems = self.validator.validate(normalized, script)
         if not problems:
             return normalized
@@ -53,7 +66,9 @@ class ReferenceDirectionService:
             temperature=0.0,
             max_tokens=2200,
         )
-        normalized = self.validator.normalize(repaired)
+        normalized = self.validator.normalize(
+            self.validator.align_with_script(repaired, script)
+        )
         if not self.validator.validate(normalized, script):
             return normalized
         return self.validator.fallback(script)

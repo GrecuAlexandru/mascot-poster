@@ -35,23 +35,41 @@ class TimelineCompiler:
 
     def compile_captions(self, transcript: TimedTranscript) -> list[CaptionCue]:
         result: list[CaptionCue] = []
-        current_words: list[str] = []
-        previous = None
         words = transcript.words
-        for index, word in enumerate(words):
-            if self._starts_new_caption(current_words, previous, word):
-                current_words = []
-            current_words.append(word.word)
-            next_start = words[index + 1].start if index + 1 < len(words) else transcript.duration_seconds
-            end = max(word.end, next_start)
-            result.append(CaptionCue(
-                words=list(current_words),
-                active_word_index=len(current_words) - 1,
-                start=word.start,
-                end=end,
-            ))
-            previous = word
+        for group in self._caption_groups(transcript):
+            group_words = [words[index].word for index in group]
+            for position, index in enumerate(group):
+                word = words[index]
+                next_start = (
+                    words[index + 1].start
+                    if index + 1 < len(words)
+                    else transcript.duration_seconds
+                )
+                end = max(word.end, next_start)
+                result.append(CaptionCue(
+                    words=group_words,
+                    active_word_index=position,
+                    start=word.start,
+                    end=end,
+                ))
         return result
+
+    def _caption_groups(self, transcript: TimedTranscript) -> list[list[int]]:
+        groups: list[list[int]] = []
+        current_words: list[str] = []
+        current_indices: list[int] = []
+        previous = None
+        for index, word in enumerate(transcript.words):
+            if self._starts_new_caption(current_words, previous, word):
+                groups.append(current_indices)
+                current_words = []
+                current_indices = []
+            current_words.append(word.word)
+            current_indices.append(index)
+            previous = word
+        if current_indices:
+            groups.append(current_indices)
+        return groups
 
     def compile_direction(
         self,
@@ -77,8 +95,12 @@ class TimelineCompiler:
             ))
         absolute_cues.sort(key=lambda cue: cue.start)
         sound_cues = self._sound_cues(absolute_cues)
+        closing_start = next(
+            (beat.start for beat in transcript.beats if beat.id == "closing"),
+            transcript.duration_seconds,
+        )
         sound_cues.append(SoundEffectCue(
-            start=transcript.duration_seconds,
+            start=closing_start,
             kind=SfxKind.CTA_STING,
         ))
         return CompiledTimeline(

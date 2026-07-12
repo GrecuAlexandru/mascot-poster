@@ -155,6 +155,10 @@ class TestTopicService:
         result = asyncio.run(svc.generate_topics(niche="food", language="en", count=2))
         assert len(result) == 2
         assert result[0].title == "A vs B"
+        prompt = mock_llm.complete_json.await_args.kwargs["user_prompt"]
+        assert "concrete physical" in prompt
+        assert "Never suggest abstract concepts" in prompt
+        assert "readable paragraphs, URLs, warning labels" in prompt
 
 
 class TestScriptService:

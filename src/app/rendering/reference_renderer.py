@@ -4,16 +4,20 @@ import math
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from app.domain.enums import Focus, MascotAnchor, MascotPose
 from app.domain.models import CaptionCue, CompiledVideoSpec
 from app.rendering.coordinates import Region, TemplateConfig, load_template
-from app.rendering.text_layout import load_font, measure_text
+from app.rendering.text_layout import fit_text, load_font, measure_text
 from app.services.mascot_calibration_service import MascotCalibrationService, PoseCalibration
 
 
 class ReferenceRenderer:
+    caption_word_gap_ratio = 0.52
+    caption_line_height_ratio = 1.38
+    caption_highlight_color = (232, 117, 96)
+
     def __init__(
         self,
         templates_dir: Path,
@@ -23,7 +27,9 @@ class ReferenceRenderer:
         self.template = load_template("reference_v1", templates_dir)
         self.mascots_dir = mascots_dir
         self.font_path = font_path
+        self._label_font_path = self._resolve_label_font_path(font_path)
         self._images: dict[Path, Image.Image] = {}
+        self._bubble_cache: dict[str, tuple[Image.Image, int]] = {}
         self._mascot_paths = self._load_mascot_paths()
         self._calibration_service = MascotCalibrationService(mascots_dir)
         self._calibration = self._calibration_service.load()
@@ -32,6 +38,11 @@ class ReferenceRenderer:
     def calibration_path(self) -> Path:
         return self._calibration_service.config_path
 
+    @staticmethod
+    def _resolve_label_font_path(font_path: Optional[Path]) -> Optional[Path]:
+        candidate = Path("C:/Windows/Fonts/arialbi.ttf")
+        return candidate if candidate.exists() else font_path
+
     def compose_frame(self, spec: CompiledVideoSpec, time_seconds: float) -> Image.Image:
         canvas = Image.new(
             "RGBA",
@@ -39,24 +50,23 @@ class ReferenceRenderer:
             (*self.template.background_color, 255),
         )
         draw = ImageDraw.Draw(canvas)
-        self._draw_product(
+        self._draw_product_pair(
             canvas,
             spec.left_image,
-            self.template.region("left_image"),
-            self.product_scale_at(spec, time_seconds, Focus.LEFT),
-        )
-        self._draw_product(
-            canvas,
             spec.right_image,
+            self.template.region("left_image"),
             self.template.region("right_image"),
+            self.product_scale_at(spec, time_seconds, Focus.LEFT),
             self.product_scale_at(spec, time_seconds, Focus.RIGHT),
         )
-        self._draw_label(draw, spec.left_label, self.template.region("left_label"))
-        self._draw_label(draw, spec.right_label, self.template.region("right_label"))
-        self._draw_caption(draw, self._caption_at(spec.captions, time_seconds))
+        cta_visible = self.cta_visible_at(spec, time_seconds)
+        if not cta_visible:
+            self._draw_label(canvas, spec.left_label, self.template.region("left_label"))
+            self._draw_label(canvas, spec.right_label, self.template.region("right_label"))
+            self._draw_caption(draw, self._caption_at(spec.captions, time_seconds))
         self._draw_mascot(canvas, spec, time_seconds)
-        if self.cta_visible_at(spec, time_seconds):
-            self._draw_cta(draw)
+        if cta_visible:
+            self._draw_cta(canvas, spec, time_seconds)
         return canvas.convert("RGB")
 
     def iter_frames(self, spec: CompiledVideoSpec):
@@ -89,16 +99,10 @@ class ReferenceRenderer:
         spec: CompiledVideoSpec,
         time_seconds: float,
     ) -> tuple[float, float]:
-        current, previous, change_start = self._mascot_state(spec, time_seconds)
-        progress = min(max((time_seconds - change_start) / 0.18, 0.0), 1.0)
-        eased = 1.0 - (1.0 - progress) ** 3
-        previous_pose = self._calibration.poses[previous.mascot_pose.value]
-        current_pose = self._calibration.poses[current.mascot_pose.value]
-        previous_x = previous_pose.x + self._anchor_offset(previous.mascot_anchor)
-        current_x = current_pose.x + self._anchor_offset(current.mascot_anchor)
-        x = previous_x + (current_x - previous_x) * eased
-        y = previous_pose.y + (current_pose.y - previous_pose.y) * eased
-        return round(x, 4), round(y, 4)
+        current = self._mascot_state(spec, time_seconds)
+        pose = self._calibration.poses[current.mascot_pose.value]
+        x = pose.x + self._anchor_offset(current.mascot_anchor)
+        return round(x, 4), round(pose.y, 4)
 
     def _focus_state(self, spec: CompiledVideoSpec, time_seconds: float):
         previous = Focus.NEUTRAL
@@ -114,71 +118,194 @@ class ReferenceRenderer:
         return current, previous, change_start
 
     def _mascot_state(self, spec: CompiledVideoSpec, time_seconds: float):
-        default = type("Cue", (), {
+        current = type("Cue", (), {
             "mascot_pose": MascotPose.NEUTRAL,
             "mascot_anchor": MascotAnchor.CENTER,
             "start": 0.0,
         })()
-        previous = default
-        current = default
-        change_start = 0.0
         for cue in spec.direction_cues:
             if cue.start > time_seconds:
                 break
-            previous = current
             current = cue
-            change_start = cue.start
-        return current, previous, change_start
+        return current
 
-    def _draw_product(
+    def _draw_product_pair(
         self,
         canvas: Image.Image,
-        path: Path,
-        region: Region,
-        scale: float,
+        left_path: Path,
+        right_path: Path,
+        left_region: Region,
+        right_region: Region,
+        left_scale: float,
+        right_scale: float,
     ) -> None:
-        image = self._image(path)
-        fitted = self._fit(image, region, scale)
+        left_image = self._image(left_path)
+        right_image = self._image(right_path)
+        left_fitted, right_fitted = self._fit_pair(
+            left_image,
+            right_image,
+            left_region,
+            right_region,
+            left_scale,
+            right_scale,
+        )
+        self._paste_centered(canvas, left_fitted, left_region)
+        self._paste_centered(canvas, right_fitted, right_region)
+
+    @staticmethod
+    def _paste_centered(canvas: Image.Image, fitted: Image.Image, region: Region) -> None:
         x = region.center[0] - fitted.width // 2
         y = region.center[1] - fitted.height // 2
         canvas.alpha_composite(fitted, (x, y))
 
-    def _draw_label(self, draw: ImageDraw.ImageDraw, text: str, region: Region) -> None:
-        font = load_font(self.font_path, self.template.fonts["label"].size)
-        width, height = measure_text(text, font)
-        draw.text(
-            (region.center[0] - width // 2, region.center[1] - height // 2),
-            text,
-            font=font,
-            fill=self.template.fonts["label"].color,
-            stroke_width=1,
-            stroke_fill=(255, 255, 255),
+    @staticmethod
+    def _fit_pair(
+        left_image: Image.Image,
+        right_image: Image.Image,
+        left_region: Region,
+        right_region: Region,
+        left_scale: float,
+        right_scale: float,
+    ) -> tuple[Image.Image, Image.Image]:
+        def maximum_extent(image: Image.Image, region: Region) -> float:
+            factor = min(region.width / image.width, region.height / image.height)
+            return max(image.width, image.height) * factor
+
+        target_extent = min(
+            maximum_extent(left_image, left_region),
+            maximum_extent(right_image, right_region),
         )
+
+        def resize(image: Image.Image, scale: float) -> Image.Image:
+            factor = target_extent / max(image.width, image.height) * scale
+            return image.resize(
+                (
+                    max(1, round(image.width * factor)),
+                    max(1, round(image.height * factor)),
+                ),
+                Image.Resampling.LANCZOS,
+            )
+
+        return resize(left_image, left_scale), resize(right_image, right_scale)
+
+    def _draw_label(self, canvas: Image.Image, text: str, region: Region) -> None:
+        draw = ImageDraw.Draw(canvas)
+        font, lines, _ = fit_text(
+            text,
+            region,
+            self._label_font_path,
+            max_size=72,
+            min_size=30,
+            max_lines=2,
+        )
+        line_height = measure_text("Ag", font)[1] + 8
+        total_height = line_height * len(lines)
+        stroke = max(6, font.size // 8)
+        shadow_offset = max(3, font.size // 18)
+        for index, line in enumerate(lines):
+            width = measure_text(line, font)[0]
+            position = (
+                region.center[0] - width // 2,
+                region.center[1] - total_height // 2 + index * line_height,
+            )
+            draw.text(
+                (
+                    position[0] + shadow_offset,
+                    position[1] + shadow_offset,
+                ),
+                line,
+                font=font,
+                fill=(18, 18, 22),
+                stroke_width=stroke,
+                stroke_fill=(18, 18, 22),
+            )
+            draw.text(
+                position,
+                line,
+                font=font,
+                fill=(255, 255, 255),
+                stroke_width=stroke,
+                stroke_fill=(18, 18, 22),
+            )
 
     def _draw_caption(self, draw: ImageDraw.ImageDraw, cue: Optional[CaptionCue]) -> None:
         if cue is None:
             return
         region = self.template.region("caption")
-        font = load_font(self.font_path, self.template.fonts["caption"].size)
-        palette = [(243, 199, 181), (246, 229, 154), (191, 217, 138), (229, 184, 206)]
-        measurements = [measure_text(word, font) for word in cue.words]
-        padding_x = 16
-        gap = 12
-        total_width = sum(width + padding_x * 2 for width, _ in measurements) + gap * (len(cue.words) - 1)
-        x = region.center[0] - total_width // 2
-        max_height = max(height for _, height in measurements)
-        y = region.center[1] - max_height // 2 - 12
-        for index, (word, (width, height)) in enumerate(zip(cue.words, measurements)):
-            color = palette[index % len(palette)]
-            box = (x, y, x + width + padding_x * 2, y + max_height + 24)
-            draw.rounded_rectangle(box, radius=10, fill=color)
-            draw.text(
-                (x + padding_x, y + (max_height - height) // 2),
-                word,
-                font=font,
-                fill=(15, 15, 15),
+        font, lines = self._caption_layout(cue.words, region)
+        stroke = max(3, font.size // 14)
+        shadow_offset = max(2, font.size // 20)
+        line_height = round(font.size * self.caption_line_height_ratio)
+        total_height = line_height * len(lines)
+        gap = round(font.size * self.caption_word_gap_ratio)
+        word_index = 0
+        y = region.center[1] - total_height // 2
+        for line in lines:
+            widths = [measure_text(word, font)[0] for word in line]
+            line_width = sum(widths) + gap * (len(line) - 1)
+            x = region.center[0] - line_width // 2
+            padding_x = max(12, font.size // 7)
+            padding_y = max(10, font.size // 9)
+            text_height = measure_text("Ag", font)[1]
+            for word, width in zip(line, widths):
+                active = word_index == cue.active_word_index
+                if active:
+                    draw.rounded_rectangle(
+                        (
+                            x - padding_x,
+                            y - padding_y,
+                            x + width + padding_x,
+                            y + text_height + padding_y,
+                        ),
+                        radius=max(14, font.size // 6),
+                        fill=self.caption_highlight_color,
+                    )
+                fill = (255, 204, 44) if active else (255, 255, 255)
+                draw.text(
+                    (x + shadow_offset, y + shadow_offset),
+                    word,
+                    font=font,
+                    fill=(20, 20, 20),
+                    stroke_width=stroke,
+                    stroke_fill=(20, 20, 20),
+                )
+                draw.text(
+                    (x, y),
+                    word,
+                    font=font,
+                    fill=fill,
+                    stroke_width=stroke,
+                    stroke_fill=(24, 24, 24),
+                )
+                x += width + gap
+                word_index += 1
+            y += line_height
+
+    def _caption_layout(self, words: list[str], region: Region):
+        size = self.template.fonts["caption"].size
+        while True:
+            font = load_font(self.font_path, size)
+            gap = round(size * self.caption_word_gap_ratio)
+            lines = self._caption_lines(words, font, min(region.width, 720))
+            fits_width = all(
+                sum(measure_text(word, font)[0] for word in line) + gap * (len(line) - 1)
+                <= region.width
+                for line in lines
             )
-            x += width + padding_x * 2 + gap
+            fits_height = round(size * self.caption_line_height_ratio) * len(lines) <= region.height
+            if (fits_width and fits_height) or size <= 56:
+                return font, lines
+            size -= 7
+
+    @staticmethod
+    def _caption_lines(words: list[str], font, compact_width: int) -> list[list[str]]:
+        if len(words) <= 1:
+            return [words]
+        if len(words) == 2:
+            gap = round(font.size * ReferenceRenderer.caption_word_gap_ratio)
+            width = sum(measure_text(word, font)[0] for word in words) + gap
+            return [words] if width <= compact_width else [[words[0]], [words[1]]]
+        return [words[:2], words[2:]]
 
     def _draw_mascot(
         self,
@@ -186,12 +313,10 @@ class ReferenceRenderer:
         spec: CompiledVideoSpec,
         time_seconds: float,
     ) -> None:
-        current, _, change_start = self._mascot_state(spec, time_seconds)
-        pop_progress = min(max((time_seconds - change_start) / 0.1, 0.0), 1.0)
-        pop_scale = 1.0 + 0.06 * math.sin(math.pi * pop_progress)
+        current = self._mascot_state(spec, time_seconds)
         pivot_x, pivot_y = self.mascot_pivot_at(spec, time_seconds)
         configured = self._calibration.poses[current.mascot_pose.value]
-        animated = PoseCalibration(
+        placed = PoseCalibration(
             x=pivot_x,
             y=pivot_y,
             scale=configured.scale,
@@ -199,29 +324,136 @@ class ReferenceRenderer:
         self._calibration_service.paste_calibrated_pose(
             canvas,
             current.mascot_pose.value,
-            animated,
+            placed,
             self._calibration,
-            extra_scale=pop_scale,
         )
 
-    def _draw_cta(self, draw: ImageDraw.ImageDraw) -> None:
-        region = self.template.region("cta")
+    def _draw_cta(
+        self,
+        canvas: Image.Image,
+        spec: CompiledVideoSpec,
+        time_seconds: float,
+    ) -> None:
+        bubble, anchor_y = self._bubble_cache.get(spec.cta_text, (None, 0))
+        if bubble is None:
+            bubble, anchor_y = self._build_speech_bubble(spec.cta_text)
+            self._bubble_cache[spec.cta_text] = (bubble, anchor_y)
+
+        mascot_x, _ = self.mascot_pivot_at(spec, time_seconds)
+        head_top = self._mascot_head_top(spec, time_seconds)
+        card_anchor = (int(mascot_x), int(head_top + 12))
+
+        paste_x = card_anchor[0] - bubble.width // 2
+        paste_y = card_anchor[1] - anchor_y
+        margin = 24
+        paste_x = max(margin, min(paste_x, self.template.canvas_width - bubble.width - margin))
+        paste_y = max(margin, paste_y)
+        canvas.alpha_composite(bubble, (paste_x, paste_y))
+
+    def _mascot_head_top(self, spec: CompiledVideoSpec, time_seconds: float) -> float:
+        current = self._mascot_state(spec, time_seconds)
+        configured = self._calibration.poses[current.mascot_pose.value]
+        source = self._calibration_service._pose_image(current.mascot_pose.value)
+        height = self._calibration.base_render_height * configured.scale
+        pivot_y = self._calibration.source_pivot.y * height / source.height
+        return configured.y - pivot_y
+
+    def _build_speech_bubble(self, text: str) -> tuple[Image.Image, int]:
+        font, lines = self._bubble_lines(text)
+        line_height = measure_text("Ag", font)[1] + 12
+        text_h = line_height * len(lines)
+        text_w = max((measure_text(line, font)[0] for line in lines), default=1)
+        pad_x, pad_y = 46, 34
+        body_w = text_w + pad_x * 2
+        body_h = text_h + pad_y * 2
+        margin = 26
+        width = body_w + margin * 2
+        height = body_h + margin * 2
+        border = (30, 30, 34, 255)
+        body_bottom = margin + body_h
+
+        bubble = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+
+        shadow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(shadow)
+        sdraw.rounded_rectangle(
+            (margin, margin + 9, margin + body_w, body_bottom + 9),
+            radius=36,
+            fill=(18, 18, 24, 120),
+        )
+        bubble.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(10)))
+
+        draw = ImageDraw.Draw(bubble)
         draw.rounded_rectangle(
-            (region.x, region.y, region.x2, region.y2),
-            radius=14,
-            fill=(216, 184, 122),
-            outline=(30, 30, 30),
-            width=4,
+            (margin, margin, margin + body_w, body_bottom),
+            radius=36,
+            fill=(255, 255, 255, 255),
+            outline=border,
+            width=5,
         )
-        font = load_font(self.font_path, self.template.fonts["cta"].size)
-        text = "LIKE • SHARE • FOLLOW"
-        width, height = measure_text(text, font)
-        draw.text(
-            (region.center[0] - width // 2, region.center[1] - height // 2),
-            text,
-            font=font,
-            fill=self.template.fonts["cta"].color,
+
+        text_block_w = max((measure_text(line, font)[0] for line in lines), default=1)
+        y = margin + pad_y
+        last_bottom = y
+        for line in lines:
+            width_line = measure_text(line, font)[0]
+            draw.text(
+                (width // 2 - width_line // 2, y),
+                line,
+                font=font,
+                fill=(24, 24, 28, 255),
+            )
+            last_bottom = y + measure_text(line, font)[1]
+            y += line_height
+
+        # Amber accent underline centered beneath the phrase for a polished CTA look.
+        accent_w = int(text_block_w * 0.55)
+        accent_y = min(last_bottom + max(6, font.size // 8), body_bottom - 14)
+        draw.rounded_rectangle(
+            (width // 2 - accent_w // 2, accent_y, width // 2 + accent_w // 2, accent_y + 8),
+            radius=4,
+            fill=(255, 190, 60, 255),
         )
+
+        return bubble, bubble.height
+
+    def _bubble_lines(self, text: str):
+        # Honor explicit line breaks, then size the font so the widest paragraph fits.
+        paragraphs = [part.strip() for part in text.split("\n") if part.strip()]
+        for size in range(60, 33, -4):
+            font = load_font(self.font_path, size)
+            lines: list[str] = []
+            fits = True
+            for paragraph in paragraphs:
+                wrapped = self._wrap_words(paragraph, font, 620)
+                if any(measure_text(line, font)[0] > 620 for line in wrapped):
+                    fits = False
+                    break
+                lines.extend(wrapped)
+            if fits and len(lines) <= 4:
+                return font, lines
+        font = load_font(self.font_path, 34)
+        lines = []
+        for paragraph in paragraphs:
+            lines.extend(self._wrap_words(paragraph, font, 620))
+        return font, lines
+
+    @staticmethod
+    def _wrap_words(text: str, font, max_width: int) -> list[str]:
+        words = text.split()
+        if not words:
+            return [""]
+        lines: list[str] = []
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if measure_text(candidate, font)[0] <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+        return lines
 
     @staticmethod
     def _caption_at(captions: list[CaptionCue], time_seconds: float) -> Optional[CaptionCue]:
@@ -252,7 +484,13 @@ class ReferenceRenderer:
 
     def _image(self, path: Path) -> Image.Image:
         if path not in self._images:
-            self._images[path] = Image.open(path).convert("RGBA")
+            image = Image.open(path).convert("RGBA")
+            # Crop away transparent padding so the visible object, not the raw
+            # image, fills the region — keeps left and right objects the same size.
+            bbox = image.getchannel("A").getbbox()
+            if bbox:
+                image = image.crop(bbox)
+            self._images[path] = image
         return self._images[path]
 
     @staticmethod

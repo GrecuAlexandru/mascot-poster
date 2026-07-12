@@ -26,6 +26,7 @@ class ImageProvider(Protocol):
         output_path: Path,
         width: int = 1024,
         height: int = 1024,
+        input_references: Optional[list[Path]] = None,
     ) -> GeneratedImage: ...
 
     def estimate_cost(self, count: int = 1) -> float: ...

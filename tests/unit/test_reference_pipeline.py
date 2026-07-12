@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,6 +12,7 @@ from app.domain.enums import Focus, MascotAnchor, MascotPose, SfxKind
 from app.domain.models import (
     AbsoluteDirectionCue,
     CaptionCue,
+    ClosingBeat,
     CompiledTimeline,
     CompiledVideoSpec,
     DirectionCue,
@@ -33,6 +35,9 @@ from app.services.audio_service import AudioService
 from app.config import Settings
 from app.services.timeline_compiler import TimelineCompiler
 from app.services.reference_quality_service import ReferenceQualityService
+from app.services.reference_image_validator import ReferenceImageValidator
+from app.services.video_generation_service import _CheckpointStore
+import app.services.reference_generation_factory as reference_factory
 
 
 def test_generation_request_defaults_to_romanian_reference_duration() -> None:
@@ -72,7 +77,7 @@ def test_reference_script_exposes_exact_spoken_text() -> None:
             NarrationBeat(id="b0", text="Cafeaua acționează rapid.", pause_after_ms=300),
             NarrationBeat(id="b1", text="Ceaiul este mai blând.", pause_after_ms=0),
         ],
-        closing=NarrationBeat(
+        closing=ClosingBeat(
             id="closing",
             text="Așadar, alege băutura care se potrivește mai bine nevoilor tale.",
             pause_after_ms=500,
@@ -91,9 +96,23 @@ def test_reference_script_rejects_fragmentary_closing() -> None:
             right_item="Ceai",
             hook="Diferența contează",
             beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
-            closing=NarrationBeat(id="b8", text="Un fragment", pause_after_ms=0),
+            closing=ClosingBeat(id="b8", text="Un fragment", pause_after_ms=0),
             caption="Cafea sau ceai?",
         )
+
+
+def test_reference_script_accepts_short_signed_closing() -> None:
+    script = ReferenceScriptPackage(
+        title="Coffee vs tea",
+        left_item="Coffee",
+        right_item="Tea",
+        hook="The difference matters",
+        beats=[NarrationBeat(id="b0", text="Coffee acts quickly.")],
+        closing=ClosingBeat(id="closing", text="Hugs from Pufăilă!", pause_after_ms=500),
+        caption="Coffee or tea?",
+    )
+
+    assert script.all_beats[-1].text == "Hugs from Pufăilă!"
 
 
 def test_reference_script_all_beats_ends_with_conclusive_closing() -> None:
@@ -103,7 +122,7 @@ def test_reference_script_all_beats_ends_with_conclusive_closing() -> None:
         right_item="Ceai",
         hook="Diferența contează",
         beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
-        closing=NarrationBeat(
+        closing=ClosingBeat(
             id="closing",
             text="Așadar, alege varianta care se potrivește mai bine nevoilor tale.",
             pause_after_ms=500,
@@ -176,7 +195,7 @@ def test_compiled_video_spec_requires_existing_media(tmp_path: Path) -> None:
     assert spec.template == "reference_v1"
     assert spec.fps == 30
     assert spec.narration_end_seconds == pytest.approx(0.5)
-    assert spec.total_duration_seconds == pytest.approx(2.3)
+    assert spec.total_duration_seconds == pytest.approx(0.5)
 
     with pytest.raises(ValueError, match="left_image"):
         CompiledVideoSpec(
@@ -212,8 +231,11 @@ def test_compiled_video_spec_adds_outro_after_last_speech(tmp_path: Path) -> Non
         narration_end_seconds=25.678,
     )
 
-    assert spec.cta_start_seconds == pytest.approx(25.678)
-    assert spec.total_duration_seconds == pytest.approx(27.478)
+    # The CTA bubble appears while the closing signoff is spoken (closing beat start),
+    # while the video still runs a full outro after narration ends.
+    assert spec.cta_start_seconds == pytest.approx(24.0)
+    assert spec.narration_end == pytest.approx(25.678)
+    assert spec.total_duration_seconds == pytest.approx(25.678)
 
 
 def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
@@ -243,8 +265,8 @@ def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
         image_provenance_path=paths["provenance.json"],
         quality_report_path=paths["quality.json"],
         cost_report_path=paths["cost.json"],
-        duration_seconds=26.8,
-        frame_count=804,
+        duration_seconds=25.0,
+        frame_count=750,
         resolution=(1080, 1920),
         scene_count=5,
     )
@@ -310,6 +332,41 @@ def test_settings_use_approved_low_cost_model_chain() -> None:
     assert settings.llm_fallback_model == "qwen/qwen3.5-flash-02-23"
 
 
+def test_checkpoint_persists_exception_type_when_message_is_empty(tmp_path: Path) -> None:
+    checkpoint = _CheckpointStore(tmp_path)
+
+    checkpoint.fail("topic", TimeoutError())
+
+    state = json.loads((tmp_path / "_pipeline" / "state.json").read_text(encoding="utf-8"))
+    assert state["error"] == "TimeoutError: no details provided"
+
+
+def test_production_pipeline_uses_vision_only_for_search_image_validation(monkeypatch) -> None:
+    provider = object()
+    monkeypatch.setattr(reference_factory, "get_topic_llm_provider", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_llm_provider", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_script_llm_provider", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_direction_llm_provider", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_search_provider", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_tts_provider", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_image_provider", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_topic_history_service", lambda: provider)
+
+    monkeypatch.setattr(
+        reference_factory,
+        "get_vision_llm_provider",
+        lambda: provider,
+        raising=False,
+    )
+
+    service = reference_factory.build_reference_generation_service(Settings(_env_file=None))
+
+    assert isinstance(service.image_service.validator, ReferenceImageValidator)
+    assert service.image_service.validator.llm is provider
+    assert service.image_service.max_candidates == 3
+    assert service.image_validator is None
+
+
 def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None:
     class FakeProvider:
         def __init__(self) -> None:
@@ -356,7 +413,7 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
             NarrationBeat(id="b0", text="unu doi.", pause_after_ms=300),
             NarrationBeat(id="b1", text="trei patru.", pause_after_ms=0),
         ],
-        closing=NarrationBeat(
+        closing=ClosingBeat(
             id="closing",
             text="Așadar, concluzia este simplă pentru alegerea ta de astăzi.",
             pause_after_ms=500,
@@ -430,7 +487,7 @@ def test_audio_service_delays_sfx_to_compiled_cue_time(tmp_path: Path) -> None:
 
     service.mix_timed_sfx(
         narration_path=narration,
-        cues=[SoundEffectCue(start=1.2, kind=SfxKind.WHOOSH, volume_db=-18.0)],
+        cues=[SoundEffectCue(start=1.2, kind=SfxKind.WHOOSH, volume_db=-14.0)],
         library={SfxKind.WHOOSH: whoosh},
         output_path=output,
         total_duration_seconds=6.8,
@@ -439,12 +496,32 @@ def test_audio_service_delays_sfx_to_compiled_cue_time(tmp_path: Path) -> None:
     command = service.ffmpeg._run.call_args.args[0]
     filter_graph = command[command.index("-filter_complex") + 1]
     assert "adelay=1200|1200" in filter_graph
+    assert "volume=-14.0dB" in filter_graph
     assert "apad,atrim=duration=6.800" in filter_graph
     assert "loudnorm=I=-16" in filter_graph
     assert "alimiter=limit=0.841395" in filter_graph
 
 
-def test_timeline_compiler_builds_progressive_romanian_captions() -> None:
+def test_timeline_compiler_starts_cta_sound_with_the_closing_signoff() -> None:
+    transcript = TimedTranscript(
+        words=[TimedWord(word="Pa!", start=8.0, end=8.4)],
+        beats=[TimedBeat(id="closing", start=8.0, end=8.4, pause_end=8.9)],
+        duration_seconds=8.9,
+    )
+
+    timeline = TimelineCompiler().compile(DirectionPlan(), transcript)
+
+    assert timeline.sound_cues[-1].kind is SfxKind.CTA_STING
+    assert timeline.sound_cues[-1].start == pytest.approx(8.0)
+
+
+def test_sound_effect_cues_are_four_decibels_louder() -> None:
+    cue = SoundEffectCue(start=0.0, kind=SfxKind.POSE_POP)
+
+    assert cue.volume_db == -14.0
+
+
+def test_timeline_compiler_shows_full_phrase_and_highlights_active_word() -> None:
     transcript = TimedTranscript(
         words=[
             TimedWord(word="Știi", start=0.0, end=0.2),
@@ -462,13 +539,19 @@ def test_timeline_compiler_builds_progressive_romanian_captions() -> None:
 
     captions = TimelineCompiler().compile_captions(transcript)
 
+    phrase = ["Știi", "care", "este", "diferența?"]
     assert [cue.words for cue in captions] == [
-        ["Știi"],
-        ["Știi", "care"],
-        ["Știi", "care", "este"],
-        ["Știi", "care", "este", "diferența?"],
+        phrase,
+        phrase,
+        phrase,
+        phrase,
         ["Cafeaua"],
     ]
+    assert [cue.active_word_index for cue in captions] == [0, 1, 2, 3, 0]
+    # Each word's highlight window matches its spoken timing.
+    assert captions[0].start == 0.0 and captions[0].end == 0.2
+    assert captions[1].start == 0.2 and captions[1].end == 0.4
+    assert captions[3].start == 0.6 and captions[3].end == 1.3
 
 
 def test_timeline_compiler_resolves_cues_and_debounces_sfx() -> None:
@@ -565,8 +648,8 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
         poster_path=poster,
         contact_sheet_path=contact,
         timeline_path=timeline,
-        duration_seconds=26.8,
-        frame_count=804,
+        duration_seconds=25.0,
+        frame_count=750,
         resolution=(1080, 1920),
         scene_count=0,
     )
@@ -589,9 +672,9 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
     assert quality.validate(moving_spec, result) == [
         "Reference mascot direction changes its calibrated anchor"
     ]
-    short_result = result.model_copy(update={"duration_seconds": 25.0})
+    short_result = result.model_copy(update={"duration_seconds": 24.0})
     assert quality.validate(spec, short_result) == [
-        "Final duration 25.000s does not match compiled duration 26.800s"
+        "Final duration 24.000s does not match compiled duration 25.000s"
     ]
     spec.captions[1].words[1] = "greșit"
     assert quality.validate(spec, result) == ["Caption active-word sequence does not match narration"]

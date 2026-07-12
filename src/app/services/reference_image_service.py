@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlparse
@@ -7,11 +8,12 @@ from urllib.parse import urlparse
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from app.domain.models import ProductImageBrief
+from app.domain.models import PairedImageBrief, ProductImageBrief
 from app.providers.images.openai_provider import RemoteImageProvider
 from app.providers.search.base import ImageCandidate
 from app.services.reference_image_validator import ImageValidationResult
 from app.services.job_cost_ledger import record_cost_event
+from app.services.mascot_asset_preparer import MascotAssetPreparer
 
 
 class ImageAttempt(BaseModel):
@@ -43,7 +45,7 @@ class ReferenceImageService:
         search_provider: object,
         generated_provider: Optional[object],
         downloader: Optional[object] = None,
-        max_candidates: int = 5,
+        max_candidates: int = 3,
         validator: Optional[object] = None,
         max_generated_attempts: int = 3,
     ):
@@ -63,19 +65,30 @@ class ReferenceImageService:
         shared_style: str = "",
         prior_rejections: Optional[list[str]] = None,
         force_generated: bool = False,
+        input_references: Optional[list[Path]] = None,
+        repair_instructions: Optional[list[str]] = None,
+        generated_attempt_limit: Optional[int] = None,
     ) -> ImageProvenance:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        search_subject = brief.exact_subject if brief else item
-        response = await self.search_provider.search(
-            f"{search_subject} isolated product transparent or white background",
-            max_results=0 if force_generated else self.max_candidates,
-            include_images=not force_generated,
+        requires_real_reference = bool(
+            not force_generated
+            and brief is not None
+            and brief.requires_real_reference
         )
-        candidates = sorted(
-            response.images,
-            key=lambda candidate: self._candidate_score(item, candidate),
-            reverse=True,
-        )[:self.max_candidates] if not force_generated else []
+        response = None
+        candidates: list[ImageCandidate] = []
+        if requires_real_reference:
+            search_subject = self._search_subject(item, brief)
+            response = await self.search_provider.search(
+                f"{search_subject} isolated product cutout transparent background png",
+                max_results=self.max_candidates,
+                include_images=True,
+            )
+            candidates = sorted(
+                response.images,
+                key=lambda candidate: self._candidate_score(item, candidate),
+                reverse=True,
+            )[:self.max_candidates]
         attempts: list[ImageAttempt] = []
 
         for index, candidate in enumerate(candidates):
@@ -100,16 +113,27 @@ class ReferenceImageService:
                     pricing_source="no_incremental_api_cost",
                     request_key=candidate.url,
                 )
-                if not self._is_usable(candidate_path):
+                if not self._is_usable(candidate_path, require_transparency=True):
                     attempts.append(ImageAttempt(
                         source_type="real",
                         image_url=candidate.url,
                         source_url=candidate.source_url,
-                        rejection_reasons=["downloaded image failed media validation"],
+                        rejection_reasons=[
+                            "downloaded image has no transparent background"
+                        ],
                     ))
                     continue
                 self._normalize(candidate_path, output_path)
                 semantic_result = await self._validate(output_path, brief)
+                if semantic_result is None:
+                    attempts.append(ImageAttempt(
+                        source_type="real",
+                        image_url=candidate.url,
+                        source_url=candidate.source_url,
+                        rejection_reasons=["search candidate could not be semantically validated"],
+                    ))
+                    output_path.unlink(missing_ok=True)
+                    continue
                 if semantic_result is not None and not semantic_result.accepted:
                     attempts.append(ImageAttempt(
                         source_type="real",
@@ -134,7 +158,7 @@ class ReferenceImageService:
                     source_url=candidate.source_url,
                     image_url=candidate.url,
                     description=candidate.description,
-                    provider=response.provider or "search",
+                    provider=response.provider if response is not None and response.provider else "search",
                     selection_reason="highest-ranked valid real image",
                     candidates_tried=index + 1,
                     attempts=attempts,
@@ -173,33 +197,38 @@ class ReferenceImageService:
             )
         effective_style = shared_style or (
                 "three-quarter camera angle, centered full object, matching product scale, "
-                "neutral studio lighting, transparent background"
+                "neutral studio lighting, solid pure-white background"
             )
         rejection_feedback = list(prior_rejections or [])
-        for _ in range(self.max_generated_attempts):
+        attempt_limit = generated_attempt_limit or self.max_generated_attempts
+        for _ in range(attempt_limit):
             prompt = self.build_generation_prompt(
                 effective_brief,
                 effective_style,
                 rejection_feedback,
+                repair_instructions=repair_instructions,
+                has_reference=bool(input_references),
             )
             try:
-                result = await self.generated_provider.generate(prompt, output_path, 1024, 1024)
+                if input_references:
+                    result = await self.generated_provider.generate(
+                        prompt,
+                        output_path,
+                        1024,
+                        1024,
+                        input_references=input_references,
+                    )
+                else:
+                    result = await self.generated_provider.generate(prompt, output_path, 1024, 1024)
                 if not self._is_usable(output_path, require_transparency=True):
-                    reasons = ["generated image failed transparency or media validation"]
+                    self._prepare_generated_background(output_path)
+                if not self._is_usable(output_path, require_transparency=True):
+                    reasons = [
+                        "generated image must use one uniform solid white background with no checkerboard"
+                    ]
                     attempts.append(ImageAttempt(
                         source_type="generated",
                         prompt=prompt,
-                        rejection_reasons=reasons,
-                    ))
-                    rejection_feedback.extend(reasons)
-                    continue
-                semantic_result = await self._validate(output_path, effective_brief)
-                if semantic_result is not None and not semantic_result.accepted:
-                    reasons = semantic_result.rejection_reasons or ["semantic validation failed"]
-                    attempts.append(ImageAttempt(
-                        source_type="generated",
-                        prompt=prompt,
-                        semantic_result=semantic_result,
                         rejection_reasons=reasons,
                     ))
                     rejection_feedback.extend(reasons)
@@ -207,7 +236,6 @@ class ReferenceImageService:
                 attempts.append(ImageAttempt(
                     source_type="generated",
                     prompt=prompt,
-                    semantic_result=semantic_result,
                     selected=True,
                 ))
                 provenance = ImageProvenance(
@@ -216,7 +244,11 @@ class ReferenceImageService:
                     source_type="generated",
                     provider=result.provider or getattr(self.generated_provider, "name", "generated"),
                     description=prompt,
-                    selection_reason="real candidates exhausted; generated image passed validation",
+                    selection_reason=(
+                        "real candidates exhausted; generated image accepted without semantic validation"
+                        if requires_real_reference
+                        else "generated directly for a generic object without semantic validation"
+                    ),
                     candidates_tried=len(candidates),
                     attempts=attempts,
                 )
@@ -232,7 +264,7 @@ class ReferenceImageService:
                 rejection_feedback.append(reason)
         output_path.unlink(missing_ok=True)
         raise RuntimeError(
-            f"Generated fallback failed validation for {item}: "
+            f"Generated image failed media validation for {item}: "
             + "; ".join(rejection_feedback[-3:])
         )
 
@@ -244,6 +276,106 @@ class ReferenceImageService:
         if self.validator is None or brief is None:
             return None
         return await self.validator.validate_item(path, brief)
+
+    async def generate_pair_repair(
+        self,
+        *,
+        left_item: str,
+        right_item: str,
+        left_path: Path,
+        right_path: Path,
+        brief: PairedImageBrief,
+        repair_instructions: list[str],
+    ) -> tuple[ImageProvenance, ImageProvenance]:
+        if self.generated_provider is None:
+            raise RuntimeError("Pair repair requires a generated image provider")
+        pair_path = left_path.parent / ".pair_repair.png"
+        prompt = self.build_pair_repair_prompt(brief, repair_instructions)
+        try:
+            result = await self.generated_provider.generate(
+                prompt,
+                pair_path,
+                1536,
+                1024,
+                input_references=[left_path, right_path],
+            )
+            self._split_pair_image(pair_path, left_path, right_path)
+            self._prepare_generated_background(left_path)
+            self._prepare_generated_background(right_path)
+            if not self._is_usable(left_path, require_transparency=True):
+                raise RuntimeError("Left half of paired repair is not usable")
+            if not self._is_usable(right_path, require_transparency=True):
+                raise RuntimeError("Right half of paired repair is not usable")
+            provider = result.provider or getattr(self.generated_provider, "name", "generated")
+            left_provenance = ImageProvenance(
+                item=left_item,
+                path=left_path,
+                source_type="generated",
+                provider=provider,
+                description=prompt,
+                selection_reason="one-shot paired repair",
+                attempts=[ImageAttempt(source_type="generated", prompt=prompt, selected=True)],
+            )
+            right_provenance = ImageProvenance(
+                item=right_item,
+                path=right_path,
+                source_type="generated",
+                provider=provider,
+                description=prompt,
+                selection_reason="one-shot paired repair",
+                attempts=[ImageAttempt(source_type="generated", prompt=prompt, selected=True)],
+            )
+            return left_provenance, right_provenance
+        finally:
+            pair_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def build_pair_repair_prompt(
+        brief: PairedImageBrief,
+        repair_instructions: list[str],
+    ) -> str:
+        repairs = "; ".join(repair_instructions) or "Make the two compositions match"
+        return (
+            "Create one photorealistic side-by-side paired product photograph on a wide canvas. "
+            "Place the LEFT requested subject entirely inside the left half and the RIGHT requested "
+            "subject entirely inside the right half, with no divider and nothing crossing the center. "
+            "Use the two input images only as composition references. Correct these validator issues: "
+            f"{repairs}. Match visible object bounding-box width and height, vertical center, camera "
+            "elevation, perspective, crop, lighting direction, shadow softness, and background treatment. "
+            "Keep each side's exact identity, material, texture, construction cues, and required elements. "
+            "Do not copy one product's identity, material, color, labels, or defining details onto the other. "
+            "Different product colors are allowed. Every visible surface must be blank and unbranded: no "
+            "embossed, printed, engraved, stitched, overlaid, captioned, or watermark text unless explicitly "
+            "required by the brief. Use one flat solid pure-white background with no checkerboard or scenery. "
+            f"Paired brief: {brief.model_dump_json()}"
+        )
+
+    @staticmethod
+    def _split_pair_image(source_path: Path, left_path: Path, right_path: Path) -> None:
+        source = Image.open(source_path).convert("RGBA")
+        midpoint = source.width // 2
+        halves = [
+            source.crop((0, 0, midpoint, source.height)),
+            source.crop((midpoint, 0, source.width, source.height)),
+        ]
+        for half, destination in zip(halves, (left_path, right_path)):
+            canvas = Image.new("RGBA", (1024, 1024), (255, 255, 255, 255))
+            scale = min(1024 / half.width, 1024 / half.height)
+            size = (max(1, round(half.width * scale)), max(1, round(half.height * scale)))
+            resized = half.resize(size, Image.Resampling.LANCZOS)
+            canvas.alpha_composite(
+                resized,
+                ((1024 - resized.width) // 2, (1024 - resized.height) // 2),
+            )
+            canvas.save(destination, format="PNG")
+
+    @staticmethod
+    def _search_subject(item: str, brief: Optional[ProductImageBrief]) -> str:
+        if brief and brief.search_query_en.strip():
+            return " ".join(brief.search_query_en.split()[:8])
+        subject = (brief.item if brief else item).split(":", 1)[0].strip()
+        words = subject.split()
+        return " ".join(words[:8]) if words else item
 
     @staticmethod
     def metadata_rejection(candidate: ImageCandidate) -> Optional[str]:
@@ -266,7 +398,15 @@ class ReferenceImageService:
         brief: ProductImageBrief,
         shared_style: str,
         prior_rejections: list[str],
+        repair_instructions: Optional[list[str]] = None,
+        has_reference: bool = False,
     ) -> str:
+        generation_style = re.sub(
+            r"transparent\s+background",
+            "solid pure-white background",
+            shared_style,
+            flags=re.IGNORECASE,
+        )
         required = ", ".join(brief.required_elements) or "no additional props"
         attributes = ", ".join(brief.distinguishing_attributes)
         prohibited = list(brief.prohibited_elements)
@@ -278,16 +418,74 @@ class ReferenceImageService:
         negatives.extend(f"not {item}" for item in brief.confusing_alternatives)
         if prior_rejections:
             negatives.extend(f"correct previous issue: {reason}" for reason in prior_rejections)
+        text_guidance = (
+            "Render no readable text, labels, logos, numbers, UI copy, watermarks, or captions. "
+            if brief.image_text_language == "none"
+            else (
+                "If readable text is intrinsic and required by the brief, render it only in Romanian with "
+                "correct diacritics; do not render English text, watermarks, or unrelated copy. "
+                if brief.image_text_language == "romanian"
+                else "If readable text is intrinsic and required by the brief, render it only in English; "
+                "do not render Romanian text, watermarks, or unrelated copy. "
+            )
+        )
+        interface_guidance = ""
+        if ReferenceImageService._is_digital_interface(brief):
+            interface_guidance = (
+                "This is a digital interface: show the real device form factor and a generic but "
+                "recognizable interface layout. Do not rely on a trademarked logo, platform name, "
+                "exact screen text, or pixel-perfect UI; ignore those details if they appear in the brief. "
+            )
+        elif brief.allow_text:
+            interface_guidance = (
+                "A concise generic identifying label required by the brief is permitted; use "
+                "no brand name, logo, watermark, or unrelated text. "
+            )
+        repair_guidance = ""
+        if repair_instructions:
+            repairs = "; ".join(repair_instructions)
+            repair_guidance = (
+                f"CORRECT THESE VALIDATOR ISSUES: {repairs}. Every visible product surface must be blank "
+                "and unbranded: no embossed, printed, engraved, stitched, overlaid, captioned, or watermark "
+                "text unless the structured brief explicitly requires a generic identity label. "
+            )
+        reference_guidance = ""
+        if has_reference:
+            reference_guidance = (
+                "REFERENCE IMAGE IS FOR COMPOSITION ONLY. Match its visible bounding-box width and height, "
+                "vertical center, camera elevation, perspective, crop, lighting direction, shadow softness, "
+                "and background treatment. Do not copy the reference object's identity, material, color, "
+                "labels, text, controls, or product-specific details. Preserve the exact requested subject "
+                "and every distinguishing attribute from this brief. "
+            )
         return (
             f"Create one photorealistic {brief.exact_subject}. "
             f"It must visibly show: {attributes}. Required composition details: {required}. "
-            f"Pair style: {shared_style}. The full subject must be centered and completely visible, "
-            f"occupying about 72 percent of the canvas with clean transparent pixels to every edge. "
-            "Do not replace the complete subject with a detail, control, accessory, or one component "
+            f"{interface_guidance}{text_guidance}"
+            f"{repair_guidance}{reference_guidance}"
+            f"Pair style: {generation_style}. The full subject must be perfectly upright with no roll or tilt, "
+            "with its vertical centerline aligned to the canvas midpoint. It must be centered and completely visible, "
+            f"occupying about 72 percent of the canvas on a solid pure-white background extending to every edge. "
+            "Use physically plausible real-world proportions, materials, and lighting; do not produce "
+            "an illustration, cartoon, CGI render, or product mockup. Do not replace the complete subject with a detail, control, accessory, or one component "
             "unless that detail is explicitly the requested subject. "
-            f"Use even neutral studio lighting and realistic texture. "
-            f"Negative constraints: {', '.join(negatives)}. Output a transparent PNG."
+            f"Use even neutral studio lighting and realistic texture. The background must be one flat white color: "
+            "no checkerboard, transparency grid, scenery, horizon, wall, floor, gradient, or colored backdrop. "
+            f"Negative constraints: {', '.join(negatives)}. Output one normal raster image."
         )
+
+    @staticmethod
+    def _is_digital_interface(brief: ProductImageBrief) -> bool:
+        text = " ".join([
+            brief.exact_subject,
+            *brief.distinguishing_attributes,
+            *brief.required_elements,
+        ]).casefold()
+        interface_terms = (
+            "interface", "homepage", "webpage", "app screen", "app interface",
+            "search results", "search result", "for you feed", "mobile screen",
+        )
+        return any(term in text for term in interface_terms)
 
     @staticmethod
     def _candidate_score(item: str, candidate: ImageCandidate) -> float:
@@ -325,6 +523,19 @@ class ReferenceImageService:
             return sum(1 for pixel in corners if min(pixel[:3]) >= 225) >= 3
         except Exception:
             return False
+
+    @staticmethod
+    def _prepare_generated_background(path: Path) -> None:
+        prepared_path = path.parent / f".{path.stem}_prepared.png"
+        try:
+            MascotAssetPreparer(
+                canvas_size=(1024, 1024),
+                padding=24,
+                tolerance=32,
+            ).prepare(path, prepared_path)
+            prepared_path.replace(path)
+        finally:
+            prepared_path.unlink(missing_ok=True)
 
     @staticmethod
     def _normalize(source: Path, output: Path) -> None:

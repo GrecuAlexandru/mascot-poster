@@ -38,5 +38,365 @@
     "angle": "Digestie, sațietate și impact asupra glicemiei",
     "job_id": "",
     "added_at": "2026-07-10T20:29:29.963380+00:00"
+  },
+  {
+    "title": "Grătar pe cărbuni vs Grătar pe gaz – Care îți strică mai tare grătarul?",
+    "left": "Cărbuni",
+    "right": "Gaz",
+    "angle": "Grătar pe cărbuni vs Grătar pe gaz – Care îți strică mai tare grătarul?",
+    "job_id": "",
+    "added_at": "2026-07-11T08:31:19.010516+00:00"
+  },
+  {
+    "title": "Filtre de apă vs Apă îmbuteliată – Care te păcălește mai tare?",
+    "left": "Filtre de apă",
+    "right": "Apă îmbuteliată",
+    "angle": "Filtre de apă vs Apă îmbuteliată – Care te păcălește mai tare?",
+    "job_id": "",
+    "added_at": "2026-07-11T09:45:28.535361+00:00"
+  },
+  {
+    "title": "Mașină manuală vs Automată – Care te face șofer adevărat?",
+    "left": "Mașină manuală",
+    "right": "Mașină automată",
+    "angle": "Control vs confort – de ce unii șoferi jură pe schimbător, iar alții n-au mai atins o ambreiaj de 10 ani.",
+    "job_id": "",
+    "added_at": "2026-07-11T10:46:08.144848+00:00"
+  },
+  {
+    "title": "Cărți fizice vs Cărți electronice – Ce pierzi când renunți la hârtie",
+    "left": "Cărți fizice",
+    "right": "Cărți electronice",
+    "angle": "Ce pierzi când renunți la hârtie",
+    "job_id": "",
+    "added_at": "2026-07-11T10:55:12.844528+00:00"
+  },
+  {
+    "title": "Fotografie digitală vs Fotografie pe film – Care face poze mai frumoase?",
+    "left": "Fotografie digitală",
+    "right": "Fotografie pe film",
+    "angle": "Fotografie digitală vs Fotografie pe film – Care face poze mai frumoase?",
+    "job_id": "",
+    "added_at": "2026-07-11T11:03:05.055549+00:00"
+  },
+  {
+    "title": "Covor vs Parchet – Care îți face casa mai sănătoasă?",
+    "left": "Covor",
+    "right": "Parchet",
+    "angle": "Sănătate și confort",
+    "job_id": "",
+    "added_at": "2026-07-11T11:16:40.930952+00:00"
+  },
+  {
+    "title": "Gimnastică în aer liber vs Sală de fitness – Care te face mai tonifiat?",
+    "left": "Gimnastică în aer liber: mișcări funcționale, aer proaspăt, cost zero, risc mai mare de accidentări pe teren denivelat, progres mai lent fără echipament specializat.",
+    "right": "Sală de fitness: aparate ghidate, greutăți reglabile, instructor la cerere, mediu controlat, progres rapid pe grupe musculare specifice, dar cost lunar și risc de monotonie.",
+    "angle": "Gimnastică în aer liber vs Sală de fitness – Care te face mai tonifiat?",
+    "job_id": "",
+    "added_at": "2026-07-11T11:50:25.179579+00:00"
+  },
+  {
+    "title": "Ulei de măsline vs Ulei de floarea-soarelui – Care e mai bun pentru gătit?",
+    "left": "Ulei de măsline extravirgin",
+    "right": "Ulei de floarea-soarelui rafinat",
+    "angle": "Ulei de măsline vs Ulei de floarea-soarelui – Care e mai bun pentru gătit?",
+    "job_id": "",
+    "added_at": "2026-07-11T11:50:27.184911+00:00"
+  },
+  {
+    "title": "Ceas inteligent vs Ceas clasic – Care îți măsoară mai bine viața?",
+    "left": "Ceas inteligent",
+    "right": "Ceas clasic",
+    "angle": "Unul îți numără pașii, somnul și bătăile inimii; celălalt îți arată doar ora. Dar care te face să trăiești mai conștient?",
+    "job_id": "",
+    "added_at": "2026-07-11T11:55:35.126912+00:00"
+  },
+  {
+    "title": "Cafea cu lapte vs. Espresso simplu – Care te trezește mai repede?",
+    "left": "Cafea cu lapte (latte, cappuccino, flat white)",
+    "right": "Espresso simplu",
+    "angle": "Cantitatea de cofeină pe volum și efectul asupra organismului",
+    "job_id": "",
+    "added_at": "2026-07-11T12:10:00.420240+00:00"
+  },
+  {
+    "title": "Cărămidă vs Ytong – Care ține mai bine frigul afară?",
+    "left": "Cărămidă poro-term",
+    "right": "Beton celular (YTONG)",
+    "angle": "Materiale de construcție",
+    "job_id": "",
+    "added_at": "2026-07-11T12:22:42.914958+00:00"
+  },
+  {
+    "title": "Șampon solid vs Șampon lichid – Care ți-l fură mai repede din baie?",
+    "left": "Șampon lichid: se termină în 2-3 luni dacă te speli zilnic, ocupă mult spațiu, 80% apă, ușor de folosit, ieftin inițial",
+    "right": "Șampon solid: ține 2-3 luni dar echivalent cu 2-3 sticle, minuscul, concentrat 100%, trebuie să-l ții în cutie ca să nu se topească, mai scump pe viață",
+    "angle": "Lichidele par mai economice, dar solidele ți-le iau mai puțin spațiu și de fapt ți-ar trebui mai puțin bani pe an dacă nu le lași să se topească pe marginea căzii",
+    "job_id": "",
+    "added_at": "2026-07-11T12:54:34.764548+00:00"
+  },
+  {
+    "title": "Apă fiartă vs Apă la temperatura camerei – Care te hidratează mai bine?",
+    "left": "Apă fiartă: Absoarbe mai ușor, corpul nu trebuie să o încălzească, se simte mai bine în stomac, tradiție în medicina ayurvedică de 5000 de ani",
+    "right": "Apă rece: Accelerează metabolismul cu 30%, obliga corpul să cheltuiască energie ca să o încălzească, mai ușor de băut mult fără să-ți fie rău",
+    "angle": "Apa la temperatura camerei nu e nici pe aici – corpul tău nu o recunoaște ca prioritate. Fiartă vs rece e lupta reală.",
+    "job_id": "",
+    "added_at": "2026-07-11T12:59:20.381997+00:00"
+  },
+  {
+    "title": "Lemn de foc vs Peleți – Care arde mai ieftin și mai curat",
+    "left": "Lemn de foc: ce vezi la bunici, mirosul ăla de toamnă, trebuie depozitat 1-2 ani, umiditate ideală sub 20%, te murdărești când pui în sobă, cenușă peste tot, dar e ieftin dacă ai pădure aproape",
+    "right": "Peleți: comprimate din rumeguș, densitate mare, ard 3-4 ore pe încărcare, cenușă minimă, se depozitează ușor, preț mai mare pe unitate dar consumi mai puțin",
+    "angle": "Lemn tradițional pare ieftin până calculezi munca de uscare, depozitare și curățenie. Peleții par scumpi până realizezi că ard de 3 ori mai eficient și nu-ți murdăresc casa.",
+    "job_id": "",
+    "added_at": "2026-07-11T13:01:33.462013+00:00"
+  },
+  {
+    "title": "Unt real vs Margarina – Care e mai rău pentru inima ta?",
+    "left": "Unt real: grăsimi saturate, colesterol, dar și vitamine liposolubile (A, D, E). Făcut din smântână, nimic artificial. Topire la ~32°C. Folosit de oameni de 9000 de ani.",
+    "right": "Margarina: grăsimi trans (parțial hidrogenate) sau uleiuri vegetale hidrogenate. Făcută în laborator din uleiuri și emulsionatori. Topire la ~35°C. Inventată în 1869 ca înlocuitor ieftin.",
+    "angle": "Unt pare mai „periculos",
+    "job_id": "",
+    "added_at": "2026-07-11T13:09:21.938573+00:00"
+  },
+  {
+    "title": "Ciorba rece vs Ciorba fierbinte – Care te răcorește mai bine vara?",
+    "left": "Ciorba rece (gelatină solidă, mânânci cu lingură): se servește la 4-8°C, aciditatea din oțet rămâne aceeași, stomacul trebuie să o încălzească la 37°C înainte de a o digera, efectul de răcorire durează 10-15 minute",
+    "right": "Ciorba fierbinte (tradițională, la 70°C+): aciditatea activează receptorii de gust mai rapid, termoreglarea corpului declanșează transpirație care te răcorește de la piele în afară, efectul durează 30-45 de minute",
+    "angle": "Paradoxul mâncării calde în vară: o supă fierbinte te răcorește mai lung decât una rece, dar psihologic simți altceva",
+    "job_id": "",
+    "added_at": "2026-07-11T13:19:03.006625+00:00"
+  },
+  {
+    "title": "Ciment gri vs Ciment alb – Care ți-l alegi de fapt?",
+    "left": "Ciment gri",
+    "right": "Ciment alb",
+    "angle": "Cimentul gri e standard, ieftin, folosit în 90% din construcții și are rezistență ușor mai mare. Cimentul alb e cosmetic, scump de 3-4 ori, se vede în finisaje și nu-ți schimbă structura casei. Diferența reală: dacă vezi betonul final, alegi alb; dacă-l acoperi cu gresie sau tencuială, alegi gri și economisești bani. Nici unul nu-ți ține mai bine casa în picioare – e doar o chestiune de estetică vs. buzunar.",
+    "job_id": "",
+    "added_at": "2026-07-11T13:25:21.509062+00:00"
+  },
+  {
+    "title": "Cărți de buzunar vs Cărți format standard",
+    "left": "Carte de buzunar",
+    "right": "Carte format standard",
+    "angle": "Cartea de buzunar (mass market paperback) e mai mică, mai ușoară, mai ieftină și ușor de ținut cu o mână pe metrou. Cartea standard e mai mare, are font mai mare, hârtie mai groasă și se simte mai premium. De buzunar se deteriorează mai repede, standard durează ani. Buzunarul încape în geantă, standardul ocupă raft. Standardul costa de 2-3 ori mai mult. Buzunarul se găsește la ciosc, standard la librării. Dacă citești mult și călătorești, buzunar. Dacă vrei să păstrezi cartea frumoasă, standard.",
+    "job_id": "",
+    "added_at": "2026-07-11T13:54:48.183809+00:00"
+  },
+  {
+    "title": "Vin roșu vs Vin alb – Care te face mai beat mai repede?",
+    "left": "Vin roșu",
+    "right": "Vin alb",
+    "angle": "Vinul roșu conține mai mult tanin și pigmenți din coajă, ceea ce încetinește absorția alcoolului și îți dă senzația de «plin» mai repede. Vinul alb se absoarbe mai ușor în stomacul gol, deci efectul alcoolului simți mai imediat și mai intens. Diferența reală: roșul te face beat mai ușor, dar mai rar îți dă mahmureală grea. Albul te lovește mai repede, dar se metabolizează și mai ușor. Concentrația de alcool contează mai mult decât culoarea – un roșu la 15% vs un alb la 12% schimbă complet ecuația.",
+    "job_id": "",
+    "added_at": "2026-07-11T14:35:32.077517+00:00"
+  },
+  {
+    "title": "Apă din robinet vs Apă filtrată acasă",
+    "left": "Apă din robinet",
+    "right": "Apă filtrată acasă",
+    "angle": "Apa din robinet trece prin 10-15 etape de tratare și trebuie să respecte standarde UE stricte, dar clorul și mineralele rămân. Filtrele de acasă (carbon activ, osmoza inversa) elimină mai mult, dar necesită înlocuire regulată și investiție inițială. Apa din robinet e testată zilnic de autoritati, filtrele depind de tine. Diferența reală: robinet = sigur dar cu gust, filtru = mai pur dar mai scump pe termen lung.",
+    "job_id": "",
+    "added_at": "2026-07-11T15:39:06.494679+00:00"
+  },
+  {
+    "title": "Cafeaua din dimineață vs Ceaiul din dimineață",
+    "left": "Cafeaua neagră",
+    "right": "Ceaiul verde",
+    "angle": "Cafeaua are 95mg de cofeină pe cană și te trezește în 15 minute, dar te prinde o cădere de energie la 2 ore. Ceaiul verde are 25mg de cofeină plus L-teanină, care ți-o eliberează lent timp de 4-6 ore și nu ai căderea bruscă. Cafeaua îți accelerează inima și te face agitat dacă bei pe stomacul gol. Ceaiul e mai ușor la stomac. Cafeaua are mai mulți antioxidanți, dar ceaiul e mai stabil din punct de vedere energetic. Alegerea: dacă vrei să te trezești acum, cafeaua. Dacă vrei să stai treaz toată ziua fără să te simți ca un iepure, ceaiul.",
+    "job_id": "",
+    "added_at": "2026-07-11T16:00:42.805622+00:00"
+  },
+  {
+    "title": "Vin roșu vs Vin spumant – Care te face mai beat mai repede?",
+    "left": "Vin roșu",
+    "right": "Vin spumant",
+    "angle": "Vinul roșu are 12-15% alcool și se bea lent, alcoolul se absorbe treptat. Vinul spumant are 11-13% alcool dar carbonatația accelerează absorția în stomac și sânge – efectul se simte mai repede, deși conținutul de alcool e mai mic. Spumantu face să crești și zahărul din sânge mai rapid, ceea ce amplifică senzația de beat. Testele arată că după aceeași cantitate, spumantu te-a lovit mai tare în primele 30 de minute.",
+    "job_id": "",
+    "added_at": "2026-07-11T20:11:33.816692+00:00"
+  },
+  {
+    "title": "Yogurt natural vs Yogurt cu arome",
+    "left": "Yogurt natural",
+    "right": "Yogurt cu arome",
+    "angle": "Yogurt natural: cultură vie, lapte, atât. Conține probiotice active care trăiesc în intestin. Gust acid, neutru, 0g zahăr adăugat. Yogurt cu arome: același lucru, plus 15-25g zahăr pe pahar, coloranți și arome sintetice. Probioticele sunt acolo, dar zahărul le ucide rapid în stomac. Diferența reală: cu natural, mănânci bacterii bune. Cu arome, mănânci bacterii bune înecat în zahăr. Testul simplu: lasă yogurt natural 2 săptămâni la rece, rămâne yogurt. Cel cu arome se descompune mai repede din cauza conservanților.",
+    "job_id": "",
+    "added_at": "2026-07-12T07:31:32.142060+00:00"
+  },
+  {
+    "title": "Lapte integral vs Lapte degresat – Care te face mai sătul?",
+    "left": "Lapte integral",
+    "right": "Lapte degresat",
+    "angle": "Lapte integral are 3.5% grăsime și ține senzația de sațietate 2-3 ore mai mult decât laptele degresat (0.5% grăsime). Degresat are mai puține calorii (90 vs 150 pe pahar), dar lipsit de grăsimile care încetinesc digestia. Integral îți dă mai mult colesterol (bun și rău), degresat te face să ai foame mai repede. Nutrienții se absorb mai bine cu grăsime. Alegerea: dacă vrei să slăbești rapid, degresat; dacă vrei să nu mai mănânci peste 2 ore, integral.",
+    "job_id": "",
+    "added_at": "2026-07-12T07:39:31.501829+00:00"
+  },
+  {
+    "title": "Ceai negru vs Ceai verde – Care te trezește mai bine?",
+    "left": "Ceai negru",
+    "right": "Ceai verde",
+    "angle": "Ceaiul negru are 40-70mg de cofeină pe ceașcă și e oxidat complet, deci cafeina se absorbe rapid și ți-o simți în 15-20 de minute. Ceaiul verde are 25-50mg de cofeină, dar conține L-teanină care o eliberează lent și ușor, fără nervozitate. Negrul te trezește brutal și cade la fel. Verde te ține treaz 4-6 ore fără spike. Negrul are mai mulți tanini (gust amar), verde e mai delicat. Dacă vrei să te trezești acum, negru. Dacă vrei să rămâi treaz toată ziua fără tremor, verde.",
+    "job_id": "",
+    "added_at": "2026-07-12T07:53:21.624996+00:00"
+  },
+  {
+    "title": "Ciorba rece vs Borș fierbinte – Care te salvează mai bine vara?",
+    "left": "Ciorba rece",
+    "right": "Borș fierbinte",
+    "angle": "Ciorba rece (cu sfeclă și varză, servită la 4-5°C) te răcorește instant și îți repune electroliții pierduți prin transpirație, dar nu te sătură pe termen lung. Borșul fierbinte (tradițional, cu carne și sfeclă, servit la 70-80°C) te face să transpiri și mai mult inițial, dar căldura stimulează digestia și te ține sătul mai mult timp. Știința: ciorba rece reduce temperatura corpului rapid (bun pentru disconfort), dar borșul fierbinte accelerează metabolismul și absorția nutrienților. Diferența reală: ciorba e pentru setea imediată, borșul e pentru o masă completă chiar și în vară.",
+    "job_id": "",
+    "added_at": "2026-07-12T07:58:21.661671+00:00"
+  },
+  {
+    "title": "Ciorba rece vs Ciorba fierbinte – Care te răcorește mai bine vara?",
+    "left": "Ciorba rece",
+    "right": "Ciorba fierbinte",
+    "angle": "Ciorba rece te răcorește instant și îți reduce temperatura corpului prin contact direct, dar efectul dureaza mai puțin. Ciorba fierbinte pare contraintuitivă, dar te face să transpiri mai mult, iar evaporarea transpirației te răcorește de fapt mai eficient și mai lung. Ciorba rece e plăcută imediat; ciorba fierbinte e răcorire reală. Unul e confort, celălalt e fiziologie.",
+    "job_id": "",
+    "added_at": "2026-07-12T09:14:11.983081+00:00"
+  },
+  {
+    "title": "Carne roșie vs Carne albă",
+    "left": "Carne roșie",
+    "right": "Carne albă",
+    "angle": "Carne roșie (vită, oaie, porc) conține mai mult fier și B12, dar și mai mult gras saturat și colesterol. Carne albă (pui, curcan) are mai puțin gras, mai puține calorii, dar și mai puțin fier. Carne roșie ia mai mult timp să se digereze. Carne albă e mai ușoară seara. Ambele au proteine, dar raportul nutrienți e complet diferit — alegerea depinde dacă prioritatea ta e energia și fierul, sau digestie ușoară și linie.",
+    "job_id": "",
+    "added_at": "2026-07-12T10:11:16.456665+00:00"
+  },
+  {
+    "title": "Cuvinte cheie pe Google vs Cuvinte cheie pe TikTok",
+    "left": "Căutare pe Google",
+    "right": "Căutare pe TikTok",
+    "angle": "Google vrea răspunsuri precise și detaliate — scrii 'cum să faci pâine acasă' și primești rețete complete. TikTok vrea divertisment și descoperire — scrii același lucru și primești 15 secunde de cineva care face pâine în ritm de muzică. Google e pentru când știi ce cauți. TikTok e pentru când vrei să descoperi ceva nou fără să știi că-l cauți. Unul îți dă răspunsuri, celălalt îți dă surprize.",
+    "job_id": "",
+    "added_at": "2026-07-12T10:22:23.774148+00:00"
+  },
+  {
+    "title": "Cacao pur vs Ciocolată comercială",
+    "left": "Cacao pur",
+    "right": "Ciocolată comercială",
+    "angle": "Cacao pur conține 12-26g de grăsime naturală și 12-16g de antioxidanți per lingură, fără zahăr adăugat. Ciocolata comercială are 50-90% zahăr, lapte praf, și emulsifianți, cu doar 2-4g de cacao real. Cacao pur e amar și greu de baut fără sweetener. Ciocolata comercială e ușor de mâncat, dar îți dă pic de zahăr urmat de cădere de energie. Diferența: cacao pur îți dă energie susținută și antioxidanți reali; ciocolata comercială e mai mult zahăr deghizat în gust de cacao.",
+    "job_id": "",
+    "added_at": "2026-07-12T10:31:00.570790+00:00"
+  },
+  {
+    "title": "Cuscus instant vs Cuscus tradițional",
+    "left": "Cuscus instant",
+    "right": "Cuscus tradițional",
+    "angle": "Cuscus instant se fierbe în 5 minute și e gata mâncare. Cuscus tradițional se fierbe 20-30 de minute și cere aburi repetate ca să se umfle bine. Diferența: cuscusul instant pierde o parte din textură și absorbe mai puțin sosul, dar e rapid. Cel tradițional e mai pufos și mai bun la gust, dar cere timp și atenție. Dacă ai 10 minute, instant. Dacă ai masă de oaspeți, tradițional.",
+    "job_id": "",
+    "added_at": "2026-07-12T10:33:17.035955+00:00"
+  },
+  {
+    "title": "Frigider cu congelator sus vs Frigider cu congelator jos",
+    "left": "Congelator sus",
+    "right": "Congelator jos",
+    "angle": "Congelatorul sus e standul clasic din anii '80 — ușor de accesat, consumă mai puțin curent, dar produsele congelate se usucă mai repede din cauza frigului direct. Congelatorul jos e designul modern — mai ergonomic (nu te-ntorci în două pentru brânzeturi), păstrează mai bine umiditatea alimentelor, dar consumă 15-20% mai multă energie și costă mai mult. Alegerea depinde de cât folosești congelatorul: dacă ții acolo doar o pâine și niste carne, sus e suficient; dacă e plin constant, jos merita investiția.",
+    "job_id": "",
+    "added_at": "2026-07-12T10:33:27.564287+00:00"
+  },
+  {
+    "title": "Cacao praf vs Ciocolată topită",
+    "left": "Cacao praf",
+    "right": "Ciocolată topită",
+    "angle": "Cacao prul are 12-26% grăsimi și se dizolvă greu în apă rece, dar are mai mulți polifenoli antioxidanți. Ciocolata topita are 30-50% grăsimi, se amestecă instant, dar pierde antioxidanți în procesul de prelucrare. Cacao prul te costa 2-3 lei pe ceașcă, ciocolata topita 5-8 lei. Cacao prul e mai ușor de dozat, ciocolata topita e mai ușor de preparat. Daca vrei antioxidanți și buzunar gol, praf. Daca vrei să nu te gândești la nimic, topita.",
+    "job_id": "",
+    "added_at": "2026-07-12T11:18:55.049163+00:00"
+  },
+  {
+    "title": "Unt de arahide vs Tahini – Care e mai dens și mai gras?",
+    "left": "Unt de arahide",
+    "right": "Tahini",
+    "angle": "Unt de arahide e făcut din arahide prăjite și măcinate, cu mult ulei natural și o textură groasă. Tahini e făcut din semințe de susan măcinate, mai ușor, mai neutru ca gust. Unt de arahide are 7g proteine pe lingură și e mai dens. Tahini are 3g proteine și se amestecă mai ușor în sosuri. Unt de arahide e mai dulce și mai ușor de mâncat direct. Tahini e mai des folosit în hummus și deserturi orientale. Unt de arahide e mai des găsit în supermarketuri. Tahini e mai scump și mai greu de găsit. Unt de arahide ți-l mănânci cu lingura din borcan. Tahini trebuie amestecat bine pentru că uleiul se separă.",
+    "job_id": "",
+    "added_at": "2026-07-12T11:40:55.905044+00:00"
+  },
+  {
+    "title": "Unt de arahide vs Pasta de alune – Care e mai gras?",
+    "left": "Unt de arahide",
+    "right": "Pasta de alune",
+    "angle": "Unt de arahide are 7g de proteine pe lingură și e mai ieftin, dar conține mai mult sare și zahăr adăugat în versiunile comerciale. Pasta de alune are 4g de proteine, e mai scumpă, dar conține mai puțini carbohidrați și adesea doar alune măcinate. Unt de arahide se întinde mai ușor pe pâine, pasta de alune e mai densă și uleioasă. Ambele au aceeași cantitate de grăsimi, dar unt de arahide e mai des folosit în fitness, în timp ce pasta de alune e preferata celor cu alergie la arahide.",
+    "job_id": "",
+    "added_at": "2026-07-12T13:20:39.001553+00:00"
+  },
+  {
+    "title": "Cuvinte cheie vs Descrieri lungi – Care te găsesc mai bine pe Google?",
+    "left": "Cuvinte cheie",
+    "right": "Descrieri lungi",
+    "angle": "Când cauți ceva pe Google, folosești 2-3 cuvinte scurte (cuvinte cheie) versus o frază completă. Cuvintele cheie sunt mai rapide și mai directe – algoritmul le recunoaște instant. Descrierile lungi sunt mai precise, dar Google trebuie să le proceseze mai mult. Cuvintele cheie: răspuns în 0.3 secunde, dar rezultate mai largi. Descrierile lungi: răspuns în 0.8 secunde, dar exact ce cauți. Pentru SEO, cuvintele cheie sunt regele. Pentru a găsi ceva specific, descrierea lungă câștigă.",
+    "job_id": "",
+    "added_at": "2026-07-12T13:48:58.563310+00:00"
+  },
+  {
+    "title": "Unt de arahide vs Unt de migdale – Care e mai gras?",
+    "left": "Unt de arahide",
+    "right": "Unt de migdale",
+    "angle": "Unt de arahide: 16g grăsime pe lingură, mai ieftin, mai des în casele românești, gust mai puternic, mai multă proteină (8g). Unt de migdale: 9g grăsime pe lingură, mai scump, trend fitness, gust mai fin, mai puțin satisfăcător dacă ești obișnuit cu arahidele. Care alegi depinde de buget și dacă vrei să-ți numeri caloriile sau să mănânci ceva care să-ți umple stomacul.",
+    "job_id": "",
+    "added_at": "2026-07-12T13:49:29.278808+00:00"
+  },
+  {
+    "title": "Cuvinte cheie vs Descrieri lungi – Care te găsește mai bine pe Google?",
+    "left": "Cuvinte cheie scurte",
+    "right": "Descrieri lungi detaliate",
+    "angle": "Când cauți ceva online, algoritmul Google preferă cuvinte cheie precise și specifice (de ex. 'pâine integrală bio') pentru că sunt mai ușor de indexat și de potrivit cu intenția ta. Descrierile lungi și pline de detalii par mai utile omului, dar algoritmul le vede ca spam dacă nu sunt optimizate. Rezultat: site-urile care folosesc cuvinte cheie clare și dense în titlu și primele 100 de caractere apar pe prima pagină, iar cele cu descrieri vagi și lungi dispar pe pagina 5. Diferența e de 10x mai mult trafic pentru cei care știu trucul.",
+    "job_id": "",
+    "added_at": "2026-07-12T14:21:48.431915+00:00"
+  },
+  {
+    "title": "Piatră naturală vs Piatră artificială – Care rezistă mai bine la timp?",
+    "left": "Piatră naturală",
+    "right": "Piatră artificială",
+    "angle": "Piatra naturala (granit, marmura, ardozie) s-a format in milioane de ani si are structura neuniforma cu variatii de culoare. Piatra artificiala (cuartz engineered, beton decorativ) e fabricata in uzina cu rasini si pigmenti uniformi. Piatra naturala se crapa mai usor la schimbari de temperatura, are nevoie de sigilare regulata, dar daca nu se deterioreaza e nemuritoare. Piatra artificiala e mai rezistenta la apa si chimicale, nu cere intretinere, dar dupa 15-20 de ani incepe sa se degradeze. Piatra naturala costa mai mult initial dar dureaza 50+ de ani. Piatra artificiala e ieftina la inceput dar trebuie inlocuita mai des. Diferenta: piatra naturala e un pariu pe viitor, piatra artificiala e confortul prezentului.",
+    "job_id": "",
+    "added_at": "2026-07-12T14:31:49.365500+00:00"
+  },
+  {
+    "title": "Casti cablate vs Casti wireless – Care sună mai autentic?",
+    "left": "Casti cablate",
+    "right": "Casti wireless",
+    "angle": "Comparăm calitatea sunetului reală (fără compresie Bluetooth), latența la jocuri și filme, autonomia infinită vs încărcarea zilnică, durabilitatea cablului vs degradarea bateriei, și prețul pentru același nivel de fidelitate audio.",
+    "job_id": "",
+    "added_at": "2026-07-12T15:28:40.968552+00:00"
+  },
+  {
+    "title": "Piele naturală vs Piele ecologică – Care ține mai mult la uzură?",
+    "left": "Piele naturală",
+    "right": "Piele ecologică",
+    "angle": "Comparăm durabilitatea reală, cum îmbătrânesc ambele materiale, costul pe an de folosință și impactul ecologic al producției — nu doar eticheta de preț.",
+    "job_id": "",
+    "added_at": "2026-07-12T15:41:37.087825+00:00"
+  },
+  {
+    "title": "Piele naturală vs Piele eco – Care ține mai mult la picioare?",
+    "left": "Piele naturală",
+    "right": "Piele eco",
+    "angle": "Durata de viață reală, respirabilitate, întreținere și impact ecologic la pantofi, cizme și căciuli portate zilnic.",
+    "job_id": "",
+    "added_at": "2026-07-12T16:17:51.403937+00:00"
+  },
+  {
+    "title": "Frigider vs Congelator – Ce ține alimentele proaspete mai mult?",
+    "left": "Frigider",
+    "right": "Congelator",
+    "angle": "Frigiderul menține 2–5°C pentru consum rapid (3–7 zile), congelatorul −18°C sau mai puțin pentru stocare lunară; frigiderul oprează bacteriile încet, congelatorul le pune pe pauză aproape total; textura și vitaminele rămân intacte la congelare rapidă, dar se degradă treptat la frigider; consumul electric: frigider ~150 kWh/an, congelator ~250 kWh/an; ideal: ambele, dar dacă alegi unul, congelatorul reduce risipa alimentară pe termen lung.",
+    "job_id": "",
+    "added_at": "2026-07-12T16:31:47.514560+00:00"
+  },
+  {
+    "title": "Sare de mare vs Sare de masă – Una e naturală, cealaltă e prelucrată?",
+    "left": "Sare de mare",
+    "right": "Sare de masă",
+    "angle": "Sarea de mare se recoltă evaporând apa de mare și păstrează magneziu, potasiu, calciu în urme. Sarea de masă e rafinată la 99,9% NaCl, adesea cu iod adăugat și agenti anti-aglomerare (E535, E536). Gustul: sarea de mare e mai rotundă, mai puțin 'aspră' pe limbi. Textura: cristale mai mari, crocante – de aia chefii o pun la final, nu în apă de fiert. Prețul: 5-10x mai scumpă. Mitul: 'sarea de mare e mai sănătoasă' – sodiul e identic la gramă, doar că folosești mai puțin pentru același gust.",
+    "job_id": "",
+    "added_at": "2026-07-12T18:28:32.548469+00:00"
+  },
+  {
+    "title": "Scaun ergonomic vs Scaun de birou obișnuit – Care îți salvează spatele după 8 ore?",
+    "left": "Scaun ergonomic",
+    "right": "Scaun de birou obișnuit",
+    "angle": "Comparăm suportul lombar reglabil, materialul respirant, brațele 4D și mecanismul de basculare al unui scaun ergonomic de gamă medie (preț 800–1500 lei) cu un scaun clasic fix, tapitat piele sintetică, fără reglări (preț 200–400 lei). Măsurăm presiunea pe discurile intervertebrale, circulația sângelui în picioare și oboseala musculară după o zi de lucru. Includem costul pe an de utilizare și riscul de hernie discale pe 5 ani.",
+    "job_id": "",
+    "added_at": "2026-07-12T18:30:07.935689+00:00"
   }
 ]

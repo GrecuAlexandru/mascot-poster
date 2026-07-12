@@ -5,6 +5,7 @@ import logging
 import base64
 import mimetypes
 import hashlib
+import re
 from pathlib import Path
 from typing import Any, Optional, TypeVar
 
@@ -168,9 +169,47 @@ class LLMProvider(BaseLLMProvider):
             "json_schema": {
                 "name": schema_name,
                 "strict": True,
-                "schema": model_type.model_json_schema(),
+                "schema": self._sanitize_schema(model_type.model_json_schema()),
             },
         }
+
+    @staticmethod
+    def _extract_json(raw: str) -> str:
+        text = raw.strip()
+        fenced = re.match(r"^```[a-zA-Z]*\s*\n?(.*?)\n?\s*```\s*$", text, re.DOTALL)
+        if fenced:
+            return fenced.group(1).strip()
+        return text
+
+    _UNSUPPORTED_SCHEMA_KEYS = {
+        "maxItems": "At most {value} items.",
+        "minimum": "Minimum {value}.",
+        "maximum": "Maximum {value}.",
+        "exclusiveMinimum": "Greater than {value}.",
+        "exclusiveMaximum": "Less than {value}.",
+        "multipleOf": "Multiple of {value}.",
+    }
+
+    @classmethod
+    def _sanitize_schema(cls, node: Any) -> Any:
+        # Some providers (e.g. Amazon Bedrock via OpenRouter) reject JSON schema
+        # constraint keywords; keep each bound visible in the description and
+        # let pydantic enforce it after parsing.
+        if isinstance(node, dict):
+            hints = [
+                template.format(value=node.pop(key))
+                for key, template in cls._UNSUPPORTED_SCHEMA_KEYS.items()
+                if key in node
+            ]
+            if hints:
+                description = node.get("description", "")
+                node["description"] = " ".join(filter(None, [description, *hints]))
+            for value in node.values():
+                cls._sanitize_schema(value)
+        elif isinstance(node, list):
+            for value in node:
+                cls._sanitize_schema(value)
+        return node
 
     def _build_multimodal_request(
         self,
@@ -287,15 +326,18 @@ class LLMProvider(BaseLLMProvider):
                 max_tokens=max_tokens,
             )
             try:
-                return model_type.model_validate_json(raw)
+                return model_type.model_validate_json(self._extract_json(raw))
             except (ValidationError, ValueError, json.JSONDecodeError) as exc:
                 if attempt >= max_repair_attempts:
                     raise LLMRepairError(
                         f"Failed to validate {schema_name} after {attempt + 1} attempts: {exc}"
                     ) from exc
                 prompt = (
-                    f"Return a corrected value that follows the required schema. "
-                    f"Validation error: {exc}. Invalid response: {raw}"
+                    f"{user_prompt}\n\n"
+                    f"Your previous response failed validation: {exc}\n"
+                    f"Previous invalid response: {raw}\n"
+                    "Return a corrected JSON value that satisfies the original task "
+                    "above and fixes exactly this validation error."
                 )
         raise LLMRepairError("unreachable")
 
@@ -345,7 +387,7 @@ class LLMProvider(BaseLLMProvider):
         self._record_usage(data, "vision_completion", request_key)
         content = data["choices"][0]["message"]["content"]
         try:
-            return model_type.model_validate_json(content)
+            return model_type.model_validate_json(self._extract_json(content))
         except (ValidationError, ValueError, json.JSONDecodeError) as exc:
             raise LLMRepairError(f"Failed to validate {schema_name}: {exc}") from exc
 
@@ -368,7 +410,7 @@ class LLMProvider(BaseLLMProvider):
 
         for attempt in range(max_repair_attempts + 1):
             try:
-                result = json.loads(raw)
+                result = json.loads(self._extract_json(raw))
                 if not isinstance(result, dict):
                     raise ValueError("Response is not a JSON object")
                 return result

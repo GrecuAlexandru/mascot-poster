@@ -47,12 +47,21 @@ class GenerationRequest(BaseModel):
 class ProductImageBrief(BaseModel):
     item: str
     exact_subject: str = Field(min_length=3)
+    search_query_en: str = Field(
+        default="",
+        description=(
+            "Concise English image-search phrase of 3-8 words naming the exact "
+            "physical object, e.g. 'single espresso shot white demitasse cup'"
+        ),
+    )
     distinguishing_attributes: list[str] = Field(min_length=1)
     required_elements: list[str] = Field(default_factory=list)
     prohibited_elements: list[str] = Field(default_factory=list)
     confusing_alternatives: list[str] = Field(default_factory=list)
     allow_packaging: bool = False
     allow_text: bool = False
+    requires_real_reference: bool = False
+    image_text_language: Literal["romanian", "english", "none"] = "none"
 
 
 class PairedImageBrief(BaseModel):
@@ -64,7 +73,7 @@ class PairedImageBrief(BaseModel):
 class NarrationBeat(BaseModel):
     id: str = Field(min_length=1)
     text: str = Field(min_length=1)
-    pause_after_ms: Literal[0, 150, 300, 500, 750] = 0
+    pause_after_ms: Literal[0, 150, 300, 500, 750, 1000] = 0
     claim_ids: list[str] = Field(default_factory=list)
 
     @field_validator("text")
@@ -83,13 +92,25 @@ class Claim(BaseModel):
     risk_level: Literal["low", "medium", "high"] = "low"
 
 
+class ClosingBeat(NarrationBeat):
+    id: Literal["closing"] = "closing"
+    pause_after_ms: Literal[500, 750] = 750
+    text: str = Field(
+        min_length=1,
+        description=(
+            "Concluding verdict of 6-28 words, one or two complete sentences "
+            "ending with '.', '!' or '?'"
+        ),
+    )
+
+
 class ReferenceScriptPackage(BaseModel):
     title: str
     left_item: str
     right_item: str
     hook: str
     beats: list[NarrationBeat] = Field(min_length=1)
-    closing: NarrationBeat
+    closing: ClosingBeat
     caption: str
     hashtags: list[str] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
@@ -97,12 +118,8 @@ class ReferenceScriptPackage(BaseModel):
     @model_validator(mode="after")
     def validate_closing(self) -> "ReferenceScriptPackage":
         words = self.closing.text.split()
-        if self.closing.id != "closing":
-            raise ValueError("closing beat id must be 'closing'")
-        if self.closing.pause_after_ms not in (500, 750):
-            raise ValueError("closing pause must be 500 or 750 ms")
-        if not 6 <= len(words) <= 28:
-            raise ValueError("closing must contain 6-28 words")
+        if not 2 <= len(words) <= 28:
+            raise ValueError("closing must contain 2-28 words")
         if not self.closing.text.endswith((".", "!", "?")):
             raise ValueError("closing must be a complete sentence")
         return self
@@ -340,7 +357,7 @@ class AbsoluteDirectionCue(BaseModel):
 class SoundEffectCue(BaseModel):
     start: float = Field(ge=0.0)
     kind: SfxKind
-    volume_db: float = -18.0
+    volume_db: float = -14.0
 
 
 class CaptionCue(BaseModel):
@@ -375,7 +392,8 @@ class CompiledVideoSpec(BaseModel):
     sound_cues: list[SoundEffectCue] = Field(default_factory=list)
     captions: list[CaptionCue] = Field(default_factory=list)
     narration_end_seconds: Optional[float] = Field(default=None, ge=0.0)
-    outro_duration_seconds: float = Field(default=1.8, ge=1.8, le=1.8)
+    outro_duration_seconds: float = Field(default=0.0, ge=0.0)
+    cta_text: str = "Like, share, follow"
     template: str = "reference_v1"
     mascot_set: str = "default"
     width: int = 1080
@@ -392,12 +410,21 @@ class CompiledVideoSpec(BaseModel):
         return self
 
     @property
-    def cta_start_seconds(self) -> float:
+    def narration_end(self) -> float:
         return float(self.narration_end_seconds or self.transcript.duration_seconds)
 
     @property
+    def cta_start_seconds(self) -> float:
+        # The like/share/follow bubble appears while the closing signoff is spoken,
+        # so it starts at the closing beat rather than after narration ends.
+        for beat in self.transcript.beats:
+            if beat.id == "closing":
+                return float(beat.start)
+        return self.narration_end
+
+    @property
     def total_duration_seconds(self) -> float:
-        return self.cta_start_seconds + self.outro_duration_seconds
+        return self.narration_end + self.outro_duration_seconds
 
     @field_validator("left_image", "right_image", "narration_audio")
     @classmethod

@@ -3,10 +3,13 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+import mimetypes
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
 
 import httpx
+from PIL import Image, UnidentifiedImageError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -50,8 +53,18 @@ class OpenRouterImageProvider:
     def estimate_cost(self, count: int = 1) -> float:
         return round(count * OPENROUTER_IMAGE_COST, 4)
 
-    def _cache_key(self, prompt: str, width: int, height: int) -> str:
-        value = f"{prompt}|{width}x{height}|{self._model}"
+    def _cache_key(
+        self,
+        prompt: str,
+        width: int,
+        height: int,
+        input_references: Optional[list[Path]] = None,
+    ) -> str:
+        reference_hashes = [
+            hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in input_references or []
+        ]
+        value = f"{prompt}|{width}x{height}|{self._model}|{'|'.join(reference_hashes)}"
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     def _cache_path(self, key: str) -> Optional[Path]:
@@ -65,16 +78,32 @@ class OpenRouterImageProvider:
         prompt: str,
         width: int,
         height: int,
+        input_references: Optional[list[Path]] = None,
     ) -> dict[str, Any]:
-        return {
-            "model": self._model,
-            "prompt": prompt,
-            "n": 1,
-            "size": self._resolve_size(width, height),
-            "background": "transparent",
-            "output_format": "png",
-            "quality": "medium",
-        }
+        if self._model.startswith("google/gemini-"):
+            body: dict[str, Any] = {
+                "model": self._model,
+                "prompt": prompt,
+                "n": 1,
+                "resolution": "1K",
+                "aspect_ratio": self._resolve_aspect_ratio(width, height),
+            }
+        else:
+            body = {
+                "model": self._model,
+                "prompt": prompt,
+                "n": 1,
+                "size": self._resolve_size(width, height),
+                "background": "transparent",
+                "output_format": "png",
+                "quality": "medium",
+            }
+        if input_references:
+            body["input_references"] = [
+                self._encode_reference(path)
+                for path in input_references
+            ]
+        return body
 
     @retry(
         retry=retry_if_exception_type(OpenAIImageTransientError),
@@ -88,13 +117,15 @@ class OpenRouterImageProvider:
         output_path: Path,
         width: int = 1024,
         height: int = 1024,
+        input_references: Optional[list[Path]] = None,
     ) -> GeneratedImage:
         output_path = Path(output_path)
-        key = self._cache_key(prompt, width, height)
+        key = self._cache_key(prompt, width, height, input_references)
         cached = self._cache_path(key)
         if cached:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(cached.read_bytes())
+            self._normalize_to_png(output_path.read_bytes(), output_path)
             record_cost_event(
                 provider=self.name,
                 model=self._model,
@@ -122,7 +153,12 @@ class OpenRouterImageProvider:
             response = await client.post(
                 self.endpoint,
                 headers=headers,
-                json=self._build_generation_body(prompt, width, height),
+                json=self._build_generation_body(
+                    prompt,
+                    width,
+                    height,
+                    input_references,
+                ),
             )
         if response.status_code == 429:
             record_cost_event(provider=self.name, model=self._model, operation="image_generation", status="failed", pricing_source="request_failed", error="HTTP 429", request_key=key)
@@ -144,9 +180,9 @@ class OpenRouterImageProvider:
         except (KeyError, IndexError, TypeError, ValueError) as error:
             raise OpenAIImageError("OpenRouter image response did not contain PNG data") from error
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_bytes(image_data)
+        self._normalize_to_png(image_data, output_path)
         if self._cache_dir:
-            (self._cache_dir / f"{key}.png").write_bytes(image_data)
+            (self._cache_dir / f"{key}.png").write_bytes(output_path.read_bytes())
         reported_cost = data.get("usage", {}).get("cost")
         cost = float(reported_cost if reported_cost is not None else self.estimate_cost(1))
         record_cost_event(
@@ -177,3 +213,27 @@ class OpenRouterImageProvider:
         if width > height:
             return "1536x1024"
         return "1024x1536"
+
+    @staticmethod
+    def _resolve_aspect_ratio(width: int, height: int) -> str:
+        if width == height:
+            return "1:1"
+        return "3:2" if width > height else "2:3"
+
+    @staticmethod
+    def _normalize_to_png(image_data: bytes, output_path: Path) -> None:
+        try:
+            with Image.open(BytesIO(image_data)) as source:
+                image = source.convert("RGBA")
+            image.save(output_path, format="PNG")
+        except (UnidentifiedImageError, OSError, ValueError) as error:
+            raise OpenAIImageError("OpenRouter image response contained invalid image data") from error
+
+    @staticmethod
+    def _encode_reference(path: Path) -> dict[str, Any]:
+        mime = mimetypes.guess_type(path.name)[0] or "image/png"
+        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+        return {
+            "type": "image_url",
+            "image_url": {"url": f"data:{mime};base64,{encoded}"},
+        }

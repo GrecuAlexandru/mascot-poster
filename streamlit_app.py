@@ -46,6 +46,7 @@ from app.services.analytics_service import AnalyticsService, AnalyticsSnapshot
 from app.services.scene_planner import ScenePlanner
 from app.services.mascot_service import MascotService
 from app.services.reference_generation_factory import build_reference_generation_service
+from app.services.video_generation_service import format_exception_message
 
 logging.basicConfig(
     level=logging.INFO,
@@ -177,35 +178,17 @@ def create_job(topic: Optional[TopicSpec] = None) -> PipelineState:
 @st.cache_resource
 def get_llm_provider() -> Optional[object]:
     settings = get_settings()
-    if not settings.llm_api_key:
-        return None
-    skills_content = ""
-    if settings.skills_file:
-        skills_content = settings.skills_file.read_text(encoding="utf-8")
-    from app.providers.llm.openai_provider import LLMProvider
-    return LLMProvider(
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-        base_url=settings.llm_base_url,
-        skills_content=skills_content,
-    )
+    from app.config import _build_text_llm_provider
+
+    return _build_text_llm_provider(settings, settings.llm_model)
 
 
 @st.cache_resource
 def get_topic_llm_provider() -> Optional[object]:
     settings = get_settings()
-    if not settings.llm_api_key:
-        return None
-    skills_content = ""
-    if settings.skills_file:
-        skills_content = settings.skills_file.read_text(encoding="utf-8")
-    from app.providers.llm.openai_provider import LLMProvider
-    return LLMProvider(
-        api_key=settings.llm_api_key,
-        model=settings.topic_llm_model,
-        base_url=settings.llm_base_url,
-        skills_content=skills_content,
-    )
+    from app.config import _build_text_llm_provider
+
+    return _build_text_llm_provider(settings, settings.topic_llm_model)
 
 
 @st.cache_resource
@@ -2127,7 +2110,7 @@ def _run_reference_generation(request: GenerationRequest, job_id: Optional[str] 
         status.update(label=f"Video ready in {elapsed:.0f}s", state="complete")
     except Exception as error:
         st.session_state.reference_result = None
-        st.session_state.reference_error = str(error)
+        st.session_state.reference_error = format_exception_message(error)
         st.session_state.reference_retry_job_id = job_id or active_job_id
         status.update(label="Generation stopped", state="error")
 

@@ -14,7 +14,7 @@ def test_calibration_contains_every_pose_and_fixed_dot() -> None:
     calibration = MascotCalibrationService(settings.mascots_dir).load()
 
     assert set(calibration.poses) == set(MascotService(settings.mascots_dir).available_poses)
-    assert (calibration.reference_dot.x, calibration.reference_dot.y) == (540, 1670)
+    assert (calibration.reference_dot.x, calibration.reference_dot.y) == (540, 1810)
 
 
 def test_render_all_creates_full_size_images_with_identical_dot(tmp_path: Path) -> None:
@@ -27,7 +27,7 @@ def test_render_all_creates_full_size_images_with_identical_dot(tmp_path: Path) 
     for path in outputs.values():
         image = Image.open(path).convert("RGBA")
         assert image.size == (1080, 1920)
-        assert image.getpixel((540, 1670)) == (255, 0, 90, 255)
+        assert image.getpixel((540, 1810)) == (255, 0, 90, 255)
 
 
 def test_pose_adjustment_moves_pivot_without_moving_reference_dot(tmp_path: Path) -> None:
@@ -44,5 +44,5 @@ def test_pose_adjustment_moves_pivot_without_moving_reference_dot(tmp_path: Path
         pose_calibration=adjusted,
     )
 
-    assert original.getpixel((540, 1670)) == changed.getpixel((540, 1670))
+    assert original.getpixel((540, 1810)) == changed.getpixel((540, 1810))
     assert original.tobytes() != changed.tobytes()

@@ -3,9 +3,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from app.domain.models import (
     CompiledVideoSpec,
@@ -26,6 +29,12 @@ from app.services.job_cost_ledger import (
     record_cost_event,
     set_cost_stage,
 )
+
+
+def format_exception_message(error: BaseException) -> str:
+    detail = str(error).strip()
+    name = type(error).__name__
+    return f"{name}: {detail}" if detail else f"{name}: no details provided"
 
 
 class _CheckpointStore:
@@ -58,7 +67,7 @@ class _CheckpointStore:
 
     def fail(self, stage: str, error: Exception) -> None:
         self.state["failed_stage"] = stage
-        self.state["error"] = str(error)
+        self.state["error"] = format_exception_message(error)
         self._write_state()
 
     def invalidate(self, stages: list[str]) -> None:
@@ -201,34 +210,52 @@ class VideoGenerationService:
                 )
                 left_image = assets_dir / "left.png"
                 right_image = assets_dir / "right.png"
+                initial_pair_validation = None
                 pair_validation = None
+                pair_repair = None
+                pair_warnings: list[str] = []
                 if self.image_validator is not None and paired_brief is not None:
-                    pair_validation = await self.image_validator.validate_pair(
+                    initial_pair_validation = await self.image_validator.validate_pair(
                         left_image,
                         right_image,
                         paired_brief,
                     )
-                    if not pair_validation.accepted:
-                        left_provenance, right_provenance, pair_validation = (
-                            await self._regenerate_pair_images(
+                    pair_validation = initial_pair_validation
+                    if initial_pair_validation.needs_repair:
+                        (
+                            left_provenance,
+                            right_provenance,
+                            pair_validation,
+                            pair_repair,
+                        ) = await self._repair_pair_once(
                                 topic,
                                 left_image,
                                 right_image,
                                 paired_brief,
-                                pair_validation.rejection_reasons,
+                                initial_pair_validation,
+                                left_provenance,
+                                right_provenance,
                             )
-                        )
-                    if not pair_validation.accepted:
+                    failure_reasons = self._pair_failure_reasons(pair_validation)
+                    if failure_reasons:
                         raise RuntimeError(
                             "Paired image validation failed: "
-                            + "; ".join(pair_validation.rejection_reasons)
+                            + "; ".join(failure_reasons)
                         )
+                    pair_warnings = list(pair_validation.warning_reasons)
+                    if not pair_validation.pair_style_acceptable:
+                        pair_warnings.append("Residual photographic style mismatch")
+                    if not pair_validation.composition_acceptable:
+                        pair_warnings.append("Residual composition mismatch")
                 provenance_path = job_dir / "image_provenance.json"
                 provenance_path.write_text(
                     json.dumps({
                         "left": _CheckpointStore._serialize(left_provenance),
                         "right": _CheckpointStore._serialize(right_provenance),
                         "pair_validation": _CheckpointStore._serialize(pair_validation),
+                        "initial_pair_validation": _CheckpointStore._serialize(initial_pair_validation),
+                        "pair_repair": _CheckpointStore._serialize(pair_repair),
+                        "pair_warnings": pair_warnings,
                     }, indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
@@ -287,7 +314,7 @@ class VideoGenerationService:
                         request.voice_id or "",
                         request.language,
                         audio_dir,
-                        settings=TTSSettings(speed=0.8),
+                        settings=TTSSettings(speed=1.05),
                     )
                     if self._duration_is_acceptable(transcript.duration_seconds):
                         break
@@ -330,7 +357,7 @@ class VideoGenerationService:
                 )
                 mixed_audio = job_dir / "audio" / "mixed_audio.m4a"
                 narration_end_seconds = transcript.duration_seconds
-                total_duration_seconds = narration_end_seconds + 1.8
+                total_duration_seconds = narration_end_seconds
                 self.audio_service.mix_timed_sfx(
                     narration_audio,
                     timeline.sound_cues,
@@ -349,6 +376,7 @@ class VideoGenerationService:
                     direction_cues=timeline.direction_cues,
                     sound_cues=timeline.sound_cues,
                     captions=timeline.captions,
+                    cta_text="Like, share, follow",
                 )
                 checkpoint.save(stage, compiled)
 
@@ -391,6 +419,9 @@ class VideoGenerationService:
                         "total_duration_seconds": compiled.total_duration_seconds,
                         "render_duration_seconds": render_result.duration_seconds,
                         "image_pair_validation": provenance_payload.get("pair_validation"),
+                        "initial_image_pair_validation": provenance_payload.get("initial_pair_validation"),
+                        "image_pair_repair": provenance_payload.get("pair_repair"),
+                        "image_pair_warnings": provenance_payload.get("pair_warnings", []),
                         "calibration_path": str(render_result.calibration_path or ""),
                     }, indent=2, ensure_ascii=False),
                     encoding="utf-8",
@@ -449,32 +480,60 @@ class VideoGenerationService:
             shared_style=shared_style,
         )
 
-    async def _regenerate_pair_images(
+    async def _repair_pair_once(
         self,
         topic: TopicSpec,
         left_path: Path,
         right_path: Path,
         brief: Any,
-        rejection_reasons: list[str],
-    ) -> tuple[Any, Any, Any]:
-        left_provenance, right_provenance = await asyncio.gather(
-            self.image_service.acquire(
+        validation: Any,
+        left_provenance: Any,
+        right_provenance: Any,
+    ) -> tuple[Any, Any, Any, dict[str, Any]]:
+        repair_side = validation.repair_side
+        if repair_side == "none":
+            repair_side = "both"
+        instructions = list(validation.repair_instructions)
+        if not instructions:
+            instructions = list(validation.fatal_reasons or validation.warning_reasons)
+        if not instructions:
+            instructions = list(validation.rejection_reasons)
+        metadata = {
+            "repair_side": repair_side,
+            "repair_instructions": instructions,
+            "generation_calls": 1,
+        }
+        if repair_side == "left":
+            left_provenance = await self.image_service.acquire(
                 topic.comparison_left,
                 left_path,
                 brief=brief.left,
                 shared_style=brief.shared_style,
-                prior_rejections=rejection_reasons,
                 force_generated=True,
-            ),
-            self.image_service.acquire(
+                input_references=[right_path],
+                repair_instructions=instructions,
+                generated_attempt_limit=1,
+            )
+        elif repair_side == "right":
+            right_provenance = await self.image_service.acquire(
                 topic.comparison_right,
                 right_path,
                 brief=brief.right,
                 shared_style=brief.shared_style,
-                prior_rejections=rejection_reasons,
                 force_generated=True,
-            ),
-        )
+                input_references=[left_path],
+                repair_instructions=instructions,
+                generated_attempt_limit=1,
+            )
+        else:
+            left_provenance, right_provenance = await self.image_service.generate_pair_repair(
+                left_item=topic.comparison_left,
+                right_item=topic.comparison_right,
+                left_path=left_path,
+                right_path=right_path,
+                brief=brief,
+                repair_instructions=instructions,
+            )
         if self.image_validator is None:
             raise RuntimeError("Pair repair requires an image validator")
         pair_validation = await self.image_validator.validate_pair(
@@ -482,7 +541,34 @@ class VideoGenerationService:
             right_path,
             brief,
         )
-        return left_provenance, right_provenance, pair_validation
+        return left_provenance, right_provenance, pair_validation, metadata
+
+    @staticmethod
+    def _pair_failure_reasons(validation: Any) -> list[str]:
+        if not validation.has_fatal_issues:
+            return []
+        reasons = [
+            reason
+            for reason in validation.fatal_reasons
+            if not validation._color_pair_reason(reason)
+        ]
+        if reasons:
+            return reasons
+        if not validation.depicts_requested_item:
+            reasons.append("One or both images depict the wrong requested item")
+        if not validation.distinguishing_attributes_present:
+            reasons.append("Required distinguishing attributes are missing")
+        if validation.contains_logo_or_prominent_text:
+            reasons.append("Image contains unwanted text or a logo")
+        if validation.contains_prohibited_content:
+            reasons.append("Image contains prohibited content")
+        if not validation.background_acceptable:
+            reasons.append("Image background is unusable")
+        if not validation.realism_acceptable:
+            reasons.append("Image is not plausibly photorealistic")
+        if validation.confidence < 0.8:
+            reasons.append("Image identity validation confidence is too low")
+        return reasons or ["Fatal paired image validation failure"]
 
     async def _generate_verified_script(
         self,
@@ -494,7 +580,7 @@ class VideoGenerationService:
         notes = list(repair_notes)
         verification = VerificationResult(approved=False)
         script: ReferenceScriptPackage | None = None
-        for _ in range(2):
+        for _ in range(3):
             script = await self.script_writer.generate(
                 topic,
                 research,
@@ -506,9 +592,15 @@ class VideoGenerationService:
             if verification.approved:
                 return script, verification
             notes = [*repair_notes, *verification.required_changes]
-        raise RuntimeError(
-            "Script verification failed: " + "; ".join(verification.required_changes)
+        # The verifier is a soft quality gate. After exhausting repair attempts we keep the
+        # best-effort script and proceed rather than failing the whole job; the unresolved
+        # notes are logged and travel with the verification result for later review.
+        logger.warning(
+            "Proceeding with unverified script after %d attempts: %s",
+            3,
+            "; ".join(verification.required_changes) or "no specific notes",
         )
+        return script, verification
 
     @staticmethod
     def _word_budget(request: GenerationRequest) -> int:

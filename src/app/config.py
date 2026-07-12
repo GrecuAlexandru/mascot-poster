@@ -45,6 +45,23 @@ class Settings(BaseSettings):
         default="qwen/qwen3.5-flash-02-23",
         alias="LLM_FALLBACK_MODEL",
     )
+    use_nvidia_nim_text_llm: bool = Field(
+        default=False,
+        alias="USE_NVIDIA_NIM_TEXT_LLM",
+    )
+    nvidia_nim_api_key: str = Field(default="", alias="NVIDIA_NIM_API_KEY")
+    nvidia_nim_base_url: str = Field(
+        default="https://integrate.api.nvidia.com/v1",
+        alias="NVIDIA_NIM_BASE_URL",
+    )
+    nvidia_nim_model: str = Field(
+        default="qwen/qwen3.5-397b-a17b",
+        alias="NVIDIA_NIM_MODEL",
+    )
+    nvidia_nim_timeout_seconds: float = Field(
+        default=300.0,
+        alias="NVIDIA_NIM_TIMEOUT_SECONDS",
+    )
     elevenlabs_api_key: str = Field(default="", alias="ELEVENLABS_API_KEY")
     elevenlabs_voice_id_ro: str = Field(default="", alias="ELEVENLABS_VOICE_ID_RO")
     elevenlabs_voice_id_en: str = Field(default="", alias="ELEVENLABS_VOICE_ID_EN")
@@ -59,7 +76,7 @@ class Settings(BaseSettings):
         alias="SEARXNG_TIMEOUT_SECONDS",
     )
     image_model: str = Field(
-        default="openai/gpt-image-1-mini",
+        default="google/gemini-3.1-flash-lite-image",
         alias="OPENROUTER_IMAGE_MODEL",
     )
     skills_path: str = Field(default="", alias="SKILLS_PATH")
@@ -146,72 +163,47 @@ def get_settings() -> Settings:
 
 def get_llm_provider() -> Optional[object]:
     settings = get_settings()
-    if not settings.llm_api_key:
-        return None
-
-    skills_content = ""
-    if settings.skills_file:
-        skills_content = settings.skills_file.read_text(encoding="utf-8")
-
-    from app.providers.llm.openai_provider import LLMProvider
-
-    return LLMProvider(
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-        fallback_models=[settings.llm_fallback_model],
-        base_url=settings.llm_base_url,
-        skills_content=skills_content,
-    )
+    return _build_text_llm_provider(settings, settings.llm_model)
 
 
 def get_topic_llm_provider() -> Optional[object]:
     settings = get_settings()
-    if not settings.llm_api_key:
-        return None
-
-    skills_content = ""
-    if settings.skills_file:
-        skills_content = settings.skills_file.read_text(encoding="utf-8")
-
-    from app.providers.llm.openai_provider import LLMProvider
-
-    return LLMProvider(
-        api_key=settings.llm_api_key,
-        model=settings.topic_llm_model,
-        fallback_models=[settings.llm_fallback_model],
-        base_url=settings.llm_base_url,
-        skills_content=skills_content,
-    )
+    return _build_text_llm_provider(settings, settings.topic_llm_model)
 
 
 def get_script_llm_provider() -> Optional[object]:
     settings = get_settings()
-    if not settings.llm_api_key:
-        return None
-    skills_content = ""
-    if settings.skills_file:
-        skills_content = settings.skills_file.read_text(encoding="utf-8")
-    from app.providers.llm.openai_provider import LLMProvider
-    return LLMProvider(
-        api_key=settings.llm_api_key,
-        model=settings.script_llm_model,
-        fallback_models=[settings.llm_fallback_model],
-        base_url=settings.llm_base_url,
-        skills_content=skills_content,
-    )
+    return _build_text_llm_provider(settings, settings.script_llm_model)
 
 
 def get_direction_llm_provider() -> Optional[object]:
     settings = get_settings()
-    if not settings.llm_api_key:
-        return None
+    return _build_text_llm_provider(settings, settings.direction_llm_model)
+
+
+def _build_text_llm_provider(settings: Settings, openrouter_model: str) -> Optional[object]:
     skills_content = ""
     if settings.skills_file:
         skills_content = settings.skills_file.read_text(encoding="utf-8")
+    if settings.use_nvidia_nim_text_llm:
+        if not settings.nvidia_nim_api_key:
+            return None
+        from app.providers.llm.nvidia_nim_provider import NvidiaNimProvider
+
+        return NvidiaNimProvider(
+            api_key=settings.nvidia_nim_api_key,
+            model=settings.nvidia_nim_model,
+            base_url=settings.nvidia_nim_base_url,
+            timeout=settings.nvidia_nim_timeout_seconds,
+            skills_content=skills_content,
+        )
+    if not settings.llm_api_key:
+        return None
     from app.providers.llm.openai_provider import LLMProvider
+
     return LLMProvider(
         api_key=settings.llm_api_key,
-        model=settings.direction_llm_model,
+        model=openrouter_model,
         fallback_models=[settings.llm_fallback_model],
         base_url=settings.llm_base_url,
         skills_content=skills_content,

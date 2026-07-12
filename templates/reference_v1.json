@@ -10,11 +10,11 @@
     "color": [255, 255, 255]
   },
   "regions": {
-    "left_image": [50, 80, 420, 500],
-    "right_image": [550, 80, 400, 500],
-    "left_label": [50, 600, 420, 70],
-    "right_label": [550, 600, 400, 70],
-    "caption": [100, 720, 880, 180],
+    "left_image": [60, 90, 420, 470],
+    "right_image": [600, 90, 420, 470],
+    "left_label": [40, 585, 460, 96],
+    "right_label": [580, 585, 460, 96],
+    "caption": [70, 780, 940, 220],
     "mascot": [100, 930, 880, 740],
     "cta": [220, 1460, 640, 120]
   },
@@ -26,7 +26,7 @@
   },
   "fonts": {
     "label": {"size": 60, "color": [18, 18, 18]},
-    "caption": {"size": 70, "color": [15, 15, 15]},
+    "caption": {"size": 105, "color": [255, 255, 255]},
     "cta": {"size": 42, "color": [15, 15, 15]}
   },
   "focus_highlight": {
