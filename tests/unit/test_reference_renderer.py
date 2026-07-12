@@ -71,7 +71,7 @@ def test_reference_caption_layout_uses_compact_one_or_two_rows(tmp_path: Path) -
 def test_reference_caption_uses_one_fixed_highlight_color(tmp_path: Path) -> None:
     renderer = _caption_renderer(tmp_path)
 
-    assert getattr(renderer, "caption_word_gap_ratio", None) == 0.52
+    assert getattr(renderer, "caption_word_gap_ratio", None) == 0.40
     assert getattr(renderer, "caption_line_height_ratio", None) == 1.38
     assert getattr(renderer, "caption_highlight_color", None) == (232, 117, 96)
 
@@ -92,24 +92,42 @@ def test_reference_renderer_draws_one_fixed_card_behind_only_the_active_caption_
     cue = CaptionCue(words=["Dar", "care"], active_word_index=0, start=0.0, end=0.5)
     font, _ = renderer._caption_layout(cue.words, region)
     widths = [measure_text(word, font)[0] for word in cue.words]
-    gap = round(font.size * 0.52)
+    gap = round(font.size * 0.40)
     line_width = sum(widths) + gap
     x = region.center[0] - line_width // 2
     y = region.center[1] - round(font.size * 1.38) // 2
+    stroke = max(3, font.size // 14)
+    padding_x = max(12, font.size // 7)
     padding_y = max(10, font.size // 9)
+    text_bbox = ImageDraw.Draw(canvas).textbbox(
+        (x, y),
+        cue.words[0],
+        font=font,
+        stroke_width=stroke,
+    )
 
     renderer._draw_caption(ImageDraw.Draw(canvas), cue)
 
-    active_card = canvas.getpixel((x + widths[0] // 2, y - padding_y + 3))
+    active_mask = Image.new("1", canvas.size)
+    active_mask.putdata([
+        pixel == (232, 117, 96, 255)
+        for pixel in canvas.get_flattened_data()
+    ])
+    active_bbox = active_mask.getbbox()
+    assert active_bbox is not None
     second_x = x + widths[0] + gap
     inactive_background = canvas.getpixel(
-        (second_x + widths[1] // 2, y - padding_y + 3),
+        (second_x + widths[1] // 2, text_bbox[1] - padding_y + 3),
     )
-    below_card = canvas.getpixel((x + widths[0] // 2, y + measure_text("Ag", font)[1] + padding_y + 5))
+    expected_bbox = (
+        text_bbox[0] - padding_x,
+        text_bbox[1] - padding_y,
+        text_bbox[2] + padding_x + 1,
+        text_bbox[3] + padding_y + 1,
+    )
 
-    assert active_card == (232, 117, 96, 255)
+    assert active_bbox == pytest.approx(expected_bbox, abs=1)
     assert inactive_background == (255, 255, 255, 255)
-    assert below_card == (255, 255, 255, 255)
 
 
 def test_reference_renderer_equalizes_product_extent_and_centers_each_half(tmp_path: Path) -> None:
@@ -166,7 +184,14 @@ def test_reference_renderer_uses_a_tail_free_cta_card(tmp_path: Path) -> None:
     renderer = _caption_renderer(tmp_path)
 
     card, anchor_y = renderer._build_speech_bubble("Like, share, follow")
+    colors = set(card.get_flattened_data())
+    _, lines = renderer._bubble_lines(renderer._cta_display_text("Like, share, follow"))
 
+    assert renderer._cta_display_text("Like, share, follow") == "LIKE · SHARE · FOLLOW"
+    assert lines == ["LIKE · SHARE · FOLLOW"]
+    assert (24, 25, 30, 255) in colors
+    assert (255, 196, 61, 255) in colors
+    assert (255, 255, 255, 255) in colors
     assert anchor_y == card.height
 
 

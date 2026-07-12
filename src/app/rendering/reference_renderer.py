@@ -14,7 +14,7 @@ from app.services.mascot_calibration_service import MascotCalibrationService, Po
 
 
 class ReferenceRenderer:
-    caption_word_gap_ratio = 0.52
+    caption_word_gap_ratio = 0.40
     caption_line_height_ratio = 1.38
     caption_highlight_color = (232, 117, 96)
 
@@ -28,6 +28,7 @@ class ReferenceRenderer:
         self.mascots_dir = mascots_dir
         self.font_path = font_path
         self._label_font_path = self._resolve_label_font_path(font_path)
+        self._cta_font_path = self._resolve_cta_font_path(font_path)
         self._images: dict[Path, Image.Image] = {}
         self._bubble_cache: dict[str, tuple[Image.Image, int]] = {}
         self._mascot_paths = self._load_mascot_paths()
@@ -41,6 +42,11 @@ class ReferenceRenderer:
     @staticmethod
     def _resolve_label_font_path(font_path: Optional[Path]) -> Optional[Path]:
         candidate = Path("C:/Windows/Fonts/arialbi.ttf")
+        return candidate if candidate.exists() else font_path
+
+    @staticmethod
+    def _resolve_cta_font_path(font_path: Optional[Path]) -> Optional[Path]:
+        candidate = Path("C:/Windows/Fonts/arialbd.ttf")
         return candidate if candidate.exists() else font_path
 
     def compose_frame(self, spec: CompiledVideoSpec, time_seconds: float) -> Image.Image:
@@ -246,16 +252,21 @@ class ReferenceRenderer:
             x = region.center[0] - line_width // 2
             padding_x = max(12, font.size // 7)
             padding_y = max(10, font.size // 9)
-            text_height = measure_text("Ag", font)[1]
             for word, width in zip(line, widths):
                 active = word_index == cue.active_word_index
                 if active:
+                    text_bbox = draw.textbbox(
+                        (x, y),
+                        word,
+                        font=font,
+                        stroke_width=stroke,
+                    )
                     draw.rounded_rectangle(
                         (
-                            x - padding_x,
-                            y - padding_y,
-                            x + width + padding_x,
-                            y + text_height + padding_y,
+                            text_bbox[0] - padding_x,
+                            text_bbox[1] - padding_y,
+                            text_bbox[2] + padding_x,
+                            text_bbox[3] + padding_y,
                         ),
                         radius=max(14, font.size // 6),
                         fill=self.caption_highlight_color,
@@ -359,7 +370,8 @@ class ReferenceRenderer:
         return configured.y - pivot_y
 
     def _build_speech_bubble(self, text: str) -> tuple[Image.Image, int]:
-        font, lines = self._bubble_lines(text)
+        display_text = self._cta_display_text(text)
+        font, lines = self._bubble_lines(display_text)
         line_height = measure_text("Ag", font)[1] + 12
         text_h = line_height * len(lines)
         text_w = max((measure_text(line, font)[0] for line in lines), default=1)
@@ -369,7 +381,7 @@ class ReferenceRenderer:
         margin = 26
         width = body_w + margin * 2
         height = body_h + margin * 2
-        border = (30, 30, 34, 255)
+        border = (255, 196, 61, 255)
         body_bottom = margin + body_h
 
         bubble = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -379,63 +391,56 @@ class ReferenceRenderer:
         sdraw.rounded_rectangle(
             (margin, margin + 9, margin + body_w, body_bottom + 9),
             radius=36,
-            fill=(18, 18, 24, 120),
+            fill=(8, 8, 12, 180),
         )
-        bubble.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(10)))
+        bubble.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(14)))
 
         draw = ImageDraw.Draw(bubble)
         draw.rounded_rectangle(
             (margin, margin, margin + body_w, body_bottom),
             radius=36,
-            fill=(255, 255, 255, 255),
+            fill=(24, 25, 30, 255),
             outline=border,
-            width=5,
+            width=7,
         )
 
-        text_block_w = max((measure_text(line, font)[0] for line in lines), default=1)
         y = margin + pad_y
-        last_bottom = y
         for line in lines:
             width_line = measure_text(line, font)[0]
             draw.text(
                 (width // 2 - width_line // 2, y),
                 line,
                 font=font,
-                fill=(24, 24, 28, 255),
+                fill=(255, 255, 255, 255),
             )
-            last_bottom = y + measure_text(line, font)[1]
             y += line_height
 
-        # Amber accent underline centered beneath the phrase for a polished CTA look.
-        accent_w = int(text_block_w * 0.55)
-        accent_y = min(last_bottom + max(6, font.size // 8), body_bottom - 14)
-        draw.rounded_rectangle(
-            (width // 2 - accent_w // 2, accent_y, width // 2 + accent_w // 2, accent_y + 8),
-            radius=4,
-            fill=(255, 190, 60, 255),
-        )
-
         return bubble, bubble.height
+
+    @staticmethod
+    def _cta_display_text(text: str) -> str:
+        words = [part.strip().upper() for part in text.split(",") if part.strip()]
+        return " · ".join(words)
 
     def _bubble_lines(self, text: str):
         # Honor explicit line breaks, then size the font so the widest paragraph fits.
         paragraphs = [part.strip() for part in text.split("\n") if part.strip()]
         for size in range(60, 33, -4):
-            font = load_font(self.font_path, size)
+            font = load_font(self._cta_font_path, size)
             lines: list[str] = []
             fits = True
             for paragraph in paragraphs:
-                wrapped = self._wrap_words(paragraph, font, 620)
-                if any(measure_text(line, font)[0] > 620 for line in wrapped):
+                wrapped = self._wrap_words(paragraph, font, 760)
+                if any(measure_text(line, font)[0] > 760 for line in wrapped):
                     fits = False
                     break
                 lines.extend(wrapped)
             if fits and len(lines) <= 4:
                 return font, lines
-        font = load_font(self.font_path, 34)
+        font = load_font(self._cta_font_path, 34)
         lines = []
         for paragraph in paragraphs:
-            lines.extend(self._wrap_words(paragraph, font, 620))
+            lines.extend(self._wrap_words(paragraph, font, 760))
         return font, lines
 
     @staticmethod

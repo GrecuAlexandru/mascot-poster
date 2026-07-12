@@ -37,20 +37,21 @@ class BeatTTSService:
         for index, beat in enumerate(script.all_beats):
             segment_path = output_dir / f"beat_{index:02d}.mp3"
             request_key = f"{beat.id}:{beat.text}"
+            beat_settings = self._settings_for_beat(settings, beat.id)
             try:
                 result = await self.provider.synthesize(
                     text=beat.text,
                     voice_id=voice_id,
                     language=language,
                     output_path=segment_path,
-                    settings=settings,
+                    settings=beat_settings,
                     previous_text=previous_text or None,
                     seed=42,
                 )
             except Exception as error:
                 record_cost_event(
                     provider=getattr(self.provider, "name", "tts"),
-                    model=settings.model_id,
+                    model=beat_settings.model_id,
                     operation="synthesize",
                     input_units=len(beat.text),
                     unit_type="characters",
@@ -111,6 +112,12 @@ class BeatTTSService:
             duration_seconds=round(narration_end, 3),
         )
         return output_path, transcript
+
+    @staticmethod
+    def _settings_for_beat(settings: TTSSettings, beat_id: str) -> TTSSettings:
+        if beat_id == "closing":
+            return settings.model_copy(update={"speed": 0.88})
+        return settings
 
     @staticmethod
     def _proportional_words(text: str, duration: float) -> list[TimedWord]:

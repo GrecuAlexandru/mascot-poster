@@ -373,7 +373,7 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
             self.calls: list[dict] = []
 
         async def synthesize(self, text, voice_id, language, output_path, settings, **kwargs):
-            self.calls.append({"text": text, **kwargs})
+            self.calls.append({"text": text, "settings": settings, **kwargs})
             output_path.write_bytes(b"audio")
             words = text.rstrip(".").split()
             return TTSResult(
@@ -415,7 +415,7 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
         ],
         closing=ClosingBeat(
             id="closing",
-            text="Așadar, concluzia este simplă pentru alegerea ta de astăzi.",
+            text="Vă pupă Pufăilă!",
             pause_after_ms=500,
         ),
         caption="Caption",
@@ -427,7 +427,7 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
             voice_id="voice",
             language="ro",
             output_dir=tmp_path,
-            settings=TTSSettings(),
+            settings=TTSSettings(speed=1.05),
         )
     )
 
@@ -438,6 +438,8 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
     assert transcript.beats[0].pause_end == pytest.approx(2.3)
     assert transcript.duration_seconds == pytest.approx(14.2)
     assert provider.calls[1]["previous_text"] == "unu doi."
+    assert [call["settings"].speed for call in provider.calls] == [1.05, 1.05, 0.88]
+    assert provider.calls[-1]["text"] == "Vă pupă Pufăilă!"
 
 
 def test_elevenlabs_request_carries_context_and_seed() -> None:
