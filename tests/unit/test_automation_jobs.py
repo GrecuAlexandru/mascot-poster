@@ -58,12 +58,14 @@ def test_approval_binds_hash_and_is_idempotent(
         expected_video_sha256=job.video_sha256,
         telegram_user_id=7,
         telegram_chat_id=9,
+        now=job.target_at,
     )
     repeated = job_service.approve(
         job.id,
         expected_video_sha256=job.video_sha256,
         telegram_user_id=7,
         telegram_chat_id=9,
+        now=job.target_at,
     )
 
     assert approved.state is JobState.APPROVED
@@ -80,11 +82,29 @@ def test_approval_rejects_wrong_video_hash(
         job_service.approve(job.id, "wrong", 7, 9)
 
 
+def test_late_approval_is_recorded_as_missed(
+    job_service: JobService, tmp_path: Path
+) -> None:
+    job = ready_job(job_service, tmp_path)
+
+    result = job_service.approve(
+        job.id,
+        job.video_sha256 or "",
+        telegram_user_id=7,
+        telegram_chat_id=9,
+        now=job.target_at + timedelta(hours=3, seconds=1),
+    )
+
+    assert result.state is JobState.MISSED
+    assert result.approval_id is None
+    assert result.local_delete_after is not None
+
+
 def test_regeneration_invalidates_approval(
     job_service: JobService, tmp_path: Path
 ) -> None:
     job = ready_job(job_service, tmp_path)
-    job_service.approve(job.id, job.video_sha256, 7, 9)
+    job_service.approve(job.id, job.video_sha256, 7, 9, now=job.target_at)
 
     regenerated = job_service.request_regeneration(
         job.id, RegenerationKind.IMAGES

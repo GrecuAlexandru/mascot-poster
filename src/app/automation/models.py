@@ -51,6 +51,8 @@ class AutomationJob(BaseModel):
     approved_at: Optional[datetime] = None
     telegram_user_id: Optional[int] = None
     telegram_chat_id: Optional[int] = None
+    telegram_message_id: Optional[int] = None
+    telegram_notified_at: Optional[datetime] = None
     rejection_reason: Optional[str] = None
     error_message: Optional[str] = None
     action_token: Optional[str] = None

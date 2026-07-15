@@ -10,7 +10,7 @@ import pytest
 
 from app.automation.database import AutomationDatabase
 from app.automation.job_service import JobService
-from app.automation.models import JobState
+from app.automation.models import JobState, RegenerationKind
 from app.automation.worker import GenerationWorker
 
 
@@ -108,3 +108,42 @@ def test_idle_worker_returns_none(tmp_path: Path, job_service: JobService):
     )
 
     assert asyncio.run(worker.run_once()) is None
+
+
+def test_regeneration_kind_invalidates_only_required_checkpoints(
+    tmp_path: Path, job_service: JobService
+):
+    job = job_service.create_job(
+        target_at=datetime.now(timezone.utc) + timedelta(hours=2)
+    )
+    pipeline = tmp_path / "jobs" / job.id / "_pipeline"
+    pipeline.mkdir(parents=True)
+    stages = [
+        "topic",
+        "research_assets",
+        "script_verification",
+        "direction_tts",
+        "compiled",
+        "render",
+        "quality",
+    ]
+    for stage in stages:
+        (pipeline / f"{stage}.json").write_text("{}", encoding="utf-8")
+    (pipeline / "state.json").write_text(
+        json.dumps({"completed": stages, "failed_stage": None, "error": None}),
+        encoding="utf-8",
+    )
+    job_service.claim_next("worker")
+    video = tmp_path / "first.mp4"
+    video.write_bytes(b"first")
+    ready = job_service.complete_generation(job.id, video, "caption", "topic")
+    job_service.request_regeneration(ready.id, RegenerationKind.SCRIPT)
+    generator = FakeGenerator(tmp_path / "jobs")
+    worker = GenerationWorker(job_service, generator, worker_id="worker-1")
+
+    asyncio.run(worker.run_once())
+
+    assert (pipeline / "topic.json").exists()
+    assert (pipeline / "research_assets.json").exists()
+    assert not (pipeline / "direction_tts.json").exists()
+    assert not (pipeline / "compiled.json").exists()

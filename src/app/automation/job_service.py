@@ -83,6 +83,37 @@ class JobService:
             ).all()
             return [self._snapshot(row) for row in rows]
 
+    def list_pending_reviews(self, limit: int = 10) -> list[AutomationJob]:
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(AutomationJobRow)
+                .where(
+                    AutomationJobRow.state == JobState.WAITING_FOR_APPROVAL.value,
+                    AutomationJobRow.telegram_message_id.is_(None),
+                )
+                .order_by(AutomationJobRow.target_at)
+                .limit(limit)
+            ).all()
+            return [self._snapshot(row) for row in rows]
+
+    def record_telegram_message(
+        self,
+        job_id: str,
+        chat_id: int,
+        message_id: int,
+    ) -> AutomationJob:
+        with self.database.session() as session:
+            row = self._row(session, job_id)
+            self._require(row, JobState.WAITING_FOR_APPROVAL)
+            if row.telegram_message_id is not None:
+                return self._snapshot(row)
+            row.telegram_chat_id = chat_id
+            row.telegram_message_id = message_id
+            row.telegram_notified_at = self._now()
+            self._touch(row)
+            session.flush()
+            return self._snapshot(row)
+
     def claim_next(self, worker_id: str, lease_seconds: int = 300) -> AutomationJob | None:
         now = self._now()
         with self.database.session() as session:
@@ -152,7 +183,9 @@ class JobService:
         expected_video_sha256: str,
         telegram_user_id: int,
         telegram_chat_id: int,
+        now: datetime | None = None,
     ) -> AutomationJob:
+        now = now or self._now()
         with self.database.session() as session:
             row = self._row(session, job_id)
             if row.state == JobState.APPROVED.value:
@@ -162,10 +195,18 @@ class JobService:
             self._require(row, JobState.WAITING_FOR_APPROVAL)
             if row.video_sha256 != expected_video_sha256:
                 raise InvalidTransition("video hash does not match approval request")
+            if self._as_utc(now) > self._as_utc(row.target_at) + timedelta(hours=3):
+                row.state = JobState.MISSED.value
+                row.local_delete_after = now + timedelta(days=7)
+                row.telegram_user_id = telegram_user_id
+                row.telegram_chat_id = telegram_chat_id
+                self._touch(row, now)
+                session.flush()
+                return self._snapshot(row)
             row.state = JobState.APPROVED.value
             row.approval_id = str(uuid4())
             row.approved_video_sha256 = expected_video_sha256
-            row.approved_at = self._now()
+            row.approved_at = now
             row.telegram_user_id = telegram_user_id
             row.telegram_chat_id = telegram_chat_id
             row.action_token = self._token()
@@ -209,6 +250,8 @@ class JobService:
             row.approval_id = None
             row.approved_video_sha256 = None
             row.approved_at = None
+            row.telegram_message_id = None
+            row.telegram_notified_at = None
             row.action_token = self._token()
             self._touch(row)
             session.flush()
@@ -236,13 +279,34 @@ class JobService:
         with self.database.session() as session:
             row = self._row(session, job_id)
             self._require(row, JobState.WAITING_FOR_APPROVAL)
-            if now <= row.target_at + timedelta(hours=3):
+            if self._as_utc(now) <= self._as_utc(row.target_at) + timedelta(hours=3):
                 raise InvalidTransition("approval window has not expired")
             row.state = JobState.MISSED.value
             row.local_delete_after = now + timedelta(days=7)
             self._touch(row, now)
             session.flush()
             return self._snapshot(row)
+
+    def expire_overdue_approvals(
+        self, now: datetime | None = None
+    ) -> list[AutomationJob]:
+        now = now or self._now()
+        expired: list[AutomationJob] = []
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(AutomationJobRow).where(
+                    AutomationJobRow.state == JobState.WAITING_FOR_APPROVAL.value
+                )
+            ).all()
+            for row in rows:
+                if self._as_utc(now) <= self._as_utc(row.target_at) + timedelta(hours=3):
+                    continue
+                row.state = JobState.MISSED.value
+                row.local_delete_after = now + timedelta(days=7)
+                self._touch(row, now)
+                expired.append(self._snapshot(row))
+            session.flush()
+        return expired
 
     def fail(self, job_id: str, message: str) -> AutomationJob:
         with self.database.session() as session:
@@ -280,6 +344,12 @@ class JobService:
     @staticmethod
     def _now() -> datetime:
         return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
 
     @staticmethod
     def _token() -> str:

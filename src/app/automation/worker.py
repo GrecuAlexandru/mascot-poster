@@ -6,6 +6,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from app.automation.checkpoints import invalidate_checkpoints
 from app.automation.job_service import JobService
 from app.automation.models import AutomationJob
 from app.domain.models import GenerationRequest
@@ -31,6 +32,11 @@ class GenerationWorker:
             return None
         heartbeat = asyncio.create_task(self._heartbeat(job.id))
         try:
+            invalidate_checkpoints(
+                Path(self.generator.output_base),
+                job.id,
+                job.regeneration_kind,
+            )
             request = GenerationRequest(
                 topic_override=job.topic_override,
                 language=job.language,

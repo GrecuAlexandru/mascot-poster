@@ -16,6 +16,10 @@ class AutomationSettings(BaseSettings):
 
     database_url: str = "sqlite:///output/automation.db"
     internal_api_token: Optional[SecretStr] = None
+    telegram_bot_token: Optional[SecretStr] = None
+    telegram_allowed_user_id: Optional[int] = None
+    telegram_review_chat_id: Optional[int] = None
+    telegram_poll_seconds: float = Field(default=2.0, gt=0)
     worker_id: str = "mascot-worker-1"
     worker_poll_seconds: float = Field(default=5.0, gt=0)
     worker_lease_seconds: int = Field(default=300, ge=30)

@@ -37,6 +37,8 @@ class AutomationJobRow(Base):
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     telegram_user_id: Mapped[Optional[int]] = mapped_column()
     telegram_chat_id: Mapped[Optional[int]] = mapped_column()
+    telegram_message_id: Mapped[Optional[int]] = mapped_column()
+    telegram_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     action_token: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
