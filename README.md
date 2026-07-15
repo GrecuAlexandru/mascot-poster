@@ -28,6 +28,14 @@ python -m uvicorn --app-dir src app.main:app --reload
 
 API documentation is available at http://127.0.0.1:8000/docs.
 
+## Mini-PC Telegram and Buffer automation
+
+The production Compose stack runs the API, one-at-a-time generation worker, PostgreSQL job state, strict Telegram review bot, temporary Cloudflare R2 staging, Buffer TikTok publishing, and retention cleanup inside the Ubuntu Docker VM. The existing n8n instance triggers generation at 07:30 and 15:30 for 09:00 and 17:00 Europe/Bucharest publication targets.
+
+Start with [the mini-PC deployment runbook](docs/mini-pc-deployment.md) and [the n8n import instructions](n8n/README.md). Imported workflows are inactive and contain no credentials. The reusable weekly content-planning prompt is at [weekly_content_ideas.md](src/app/prompts/weekly_content_ideas.md).
+
+Nothing publishes without a Telegram approval bound to the exact final MP4 SHA-256. Regeneration invalidates the old approval. An unapproved video more than three hours past its target is marked `MISSED` and is not posted later.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and provide the external-provider credentials used by the one-click workflow.

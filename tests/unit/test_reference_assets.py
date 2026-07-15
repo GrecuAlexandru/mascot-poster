@@ -153,7 +153,7 @@ def test_searxng_compose_and_settings_enable_json_and_image_search() -> None:
     settings = (root / "searxng" / "settings.yml").read_text(encoding="utf-8")
 
     assert "  searxng:" in compose
-    assert '"8080:8080"' in compose
+    assert '"8080:8080"' not in compose
     assert "./searxng/settings.yml:/etc/searxng/settings.yml:ro" in compose
     assert "SEARXNG_BASE_URL: http://searxng:8080" in compose
     assert "- json" in settings
