@@ -16,6 +16,41 @@ def build_job_service() -> JobService:
     return JobService(database)
 
 
+def build_publication_service(job_service: JobService):
+    from app.automation.buffer_client import BufferClient
+    from app.automation.publisher import PublicationService
+    from app.automation.r2_storage import R2Storage
+
+    settings = get_automation_settings()
+    required = [
+        settings.r2_endpoint_url,
+        settings.r2_access_key_id,
+        settings.r2_secret_access_key,
+        settings.r2_bucket,
+        settings.r2_public_base_url,
+        settings.buffer_api_token,
+        settings.buffer_tiktok_channel_id,
+    ]
+    if not all(required):
+        return None
+    r2 = R2Storage(
+        endpoint_url=settings.r2_endpoint_url or "",
+        access_key_id=settings.r2_access_key_id.get_secret_value(),
+        secret_access_key=settings.r2_secret_access_key.get_secret_value(),
+        bucket=settings.r2_bucket or "",
+        public_base_url=settings.r2_public_base_url or "",
+    )
+    buffer = BufferClient(settings.buffer_api_token.get_secret_value())
+    return PublicationService(
+        job_service,
+        r2,
+        buffer,
+        channel_id=settings.buffer_tiktok_channel_id or "",
+        object_prefix=settings.r2_object_prefix,
+        thumbnail_offset_ms=settings.buffer_thumbnail_offset_ms,
+    )
+
+
 async def run_generation_worker() -> None:
     from app.automation.worker import GenerationWorker
 

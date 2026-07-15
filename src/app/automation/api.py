@@ -31,6 +31,7 @@ class CreateAutomationJob(BaseModel):
 def create_automation_router(
     job_service: JobService,
     api_token: str,
+    publisher=None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/automation", tags=["automation"])
     bearer = HTTPBearer(auto_error=False)
@@ -69,6 +70,38 @@ def create_automation_router(
     def get_job(job_id: str) -> AutomationJob:
         try:
             return job_service.get(job_id)
+        except JobNotFound as error:
+            raise HTTPException(status_code=404, detail="job not found") from error
+
+    @router.post(
+        "/jobs/{job_id}/publish",
+        response_model=AutomationJob,
+        dependencies=[Depends(authorize)],
+    )
+    async def publish_job(job_id: str) -> AutomationJob:
+        if publisher is None:
+            raise HTTPException(status_code=503, detail="publishing is not configured")
+        try:
+            return await publisher.publish(job_id)
+        except JobNotFound as error:
+            raise HTTPException(status_code=404, detail="job not found") from error
+        except Exception as error:
+            from app.automation.job_service import InvalidTransition
+
+            if isinstance(error, InvalidTransition):
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            raise
+
+    @router.post(
+        "/jobs/{job_id}/reconcile",
+        response_model=AutomationJob,
+        dependencies=[Depends(authorize)],
+    )
+    async def reconcile_job(job_id: str) -> AutomationJob:
+        if publisher is None:
+            raise HTTPException(status_code=503, detail="publishing is not configured")
+        try:
+            return await publisher.reconcile(job_id)
         except JobNotFound as error:
             raise HTTPException(status_code=404, detail="job not found") from error
 

@@ -308,6 +308,123 @@ class JobService:
             session.flush()
         return expired
 
+    def begin_media_staging(self, job_id: str) -> AutomationJob:
+        with self.database.session() as session:
+            row = self._row(session, job_id)
+            self._require(row, JobState.APPROVED)
+            if row.approved_video_sha256 != row.video_sha256:
+                raise InvalidTransition("approved video hash no longer matches")
+            row.state = JobState.STAGING_MEDIA.value
+            self._touch(row)
+            session.flush()
+            return self._snapshot(row)
+
+    def record_staged_media(
+        self,
+        job_id: str,
+        object_key: str,
+        public_url: str,
+    ) -> AutomationJob:
+        with self.database.session() as session:
+            row = self._row(session, job_id)
+            self._require(row, JobState.STAGING_MEDIA)
+            row.r2_object_key = object_key
+            row.r2_public_url = public_url
+            self._touch(row)
+            session.flush()
+            return self._snapshot(row)
+
+    def record_buffer_post(
+        self,
+        job_id: str,
+        post_id: str,
+        buffer_status: str,
+        now: datetime | None = None,
+    ) -> AutomationJob:
+        with self.database.session() as session:
+            row = self._row(session, job_id)
+            self._require(row, JobState.STAGING_MEDIA)
+            row.buffer_post_id = post_id
+            row.buffer_status = buffer_status
+            self._apply_buffer_status(row, buffer_status, now=now)
+            self._touch(row, now)
+            session.flush()
+            return self._snapshot(row)
+
+    def update_buffer_status(
+        self,
+        job_id: str,
+        buffer_status: str,
+        error_message: str | None = None,
+        published_at: datetime | None = None,
+        now: datetime | None = None,
+    ) -> AutomationJob:
+        with self.database.session() as session:
+            row = self._row(session, job_id)
+            if row.state not in {
+                JobState.SCHEDULED.value,
+                JobState.PUBLISHING.value,
+                JobState.PUBLISHED.value,
+            }:
+                raise InvalidTransition("job is not tracked by Buffer")
+            row.buffer_status = buffer_status
+            if error_message:
+                row.error_message = error_message[:4000]
+            self._apply_buffer_status(
+                row,
+                buffer_status,
+                now=now,
+                published_at=published_at,
+            )
+            self._touch(row, now)
+            session.flush()
+            return self._snapshot(row)
+
+    def list_cleanup_due(
+        self,
+        now: datetime | None = None,
+        limit: int = 100,
+    ) -> list[AutomationJob]:
+        now = now or self._now()
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(AutomationJobRow)
+                .where(
+                    or_(
+                        (
+                            AutomationJobRow.r2_object_key.is_not(None)
+                            & (AutomationJobRow.r2_delete_after <= now)
+                        ),
+                        (
+                            AutomationJobRow.video_path.is_not(None)
+                            & (AutomationJobRow.local_delete_after <= now)
+                        ),
+                    )
+                )
+                .order_by(AutomationJobRow.updated_at)
+                .limit(limit)
+            ).all()
+            return [self._snapshot(row) for row in rows]
+
+    def record_cleanup(
+        self,
+        job_id: str,
+        r2_deleted: bool,
+        local_deleted: bool,
+    ) -> AutomationJob:
+        with self.database.session() as session:
+            row = self._row(session, job_id)
+            if r2_deleted:
+                row.r2_object_key = None
+                row.r2_public_url = None
+                row.r2_delete_after = None
+            if local_deleted:
+                row.video_path = None
+                row.local_delete_after = None
+            self._touch(row)
+            session.flush()
+            return self._snapshot(row)
+
     def fail(self, job_id: str, message: str) -> AutomationJob:
         with self.database.session() as session:
             row = self._row(session, job_id)
@@ -316,6 +433,8 @@ class JobService:
             row.state = JobState.FAILED.value
             row.error_message = message[:4000]
             row.local_delete_after = self._now() + timedelta(days=7)
+            if row.r2_object_key:
+                row.r2_delete_after = self._now() + timedelta(days=2)
             row.lease_owner = None
             row.lease_expires_at = None
             self._touch(row)
@@ -352,6 +471,28 @@ class JobService:
         return value.astimezone(timezone.utc)
 
     @staticmethod
+    def _apply_buffer_status(
+        row: AutomationJobRow,
+        buffer_status: str,
+        now: datetime | None = None,
+        published_at: datetime | None = None,
+    ) -> None:
+        now = now or JobService._now()
+        if buffer_status == "sent":
+            row.state = JobState.PUBLISHED.value
+            row.published_at = published_at or now
+            row.r2_delete_after = now + timedelta(hours=48)
+            row.local_delete_after = now + timedelta(days=30)
+        elif buffer_status == "sending":
+            row.state = JobState.PUBLISHING.value
+        elif buffer_status == "error":
+            row.state = JobState.FAILED.value
+            row.r2_delete_after = now + timedelta(days=2)
+            row.local_delete_after = now + timedelta(days=7)
+        else:
+            row.state = JobState.SCHEDULED.value
+
+    @staticmethod
     def _token() -> str:
         return uuid4().hex
 
@@ -359,4 +500,7 @@ class JobService:
     def _snapshot(row: AutomationJobRow) -> AutomationJob:
         values = {column.name: getattr(row, column.name) for column in row.__table__.columns}
         values.pop("version", None)
+        for key, value in values.items():
+            if isinstance(value, datetime) and value.tzinfo is None:
+                values[key] = value.replace(tzinfo=timezone.utc)
         return AutomationJob.model_validate(values)
