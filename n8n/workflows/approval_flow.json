@@ -1,43 +1,68 @@
 {
-  "name": "Approval Flow",
+  "name": "Mascot - Reconcile Buffer delivery",
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "approval"
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "*/5 * * * *"}]
+        }
       },
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [250, 300]
+      "id": "delivery-poll",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
     },
     {
       "parameters": {
-        "chatId": "{{$env TELEGRAM_CHAT_ID}}",
-        "text": "VIDEO READY\nTopic: {{$json.topic}}\nCost: ${{$json.estimated_cost_usd}}\nPreview: {{$json.preview_url}}",
-        "replyMarkup": "inlineKeyboard",
-        "inlineKeyboardRows": {
-          "rows": [
-            {
-              "row": {
-                "buttons": [
-                  {"text": "Approve", "url": "{{$json.approve_url}}"},
-                  {"text": "Reject", "url": "{{$json.reject_url}}"},
-                  {"text": "Regenerate", "url": "{{$json.regenerate_url}}"}
-                ]
-              }
-            }
-          ]
-        }
+        "url": "http://mascot-api:8000/api/v1/automation/jobs?states=SCHEDULED,PUBLISHING",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
       },
-      "name": "Send Approval",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [500, 300]
+      "id": "get-buffer-jobs",
+      "name": "Get Buffer jobs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "credentials": {
+        "httpHeaderAuth": {"id": "REPLACE_AFTER_IMPORT", "name": "Mascot Internal API"}
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json;\nreturn (Array.isArray(payload) ? payload : []).map(job => ({ json: job }));"
+      },
+      "id": "split-buffer-jobs",
+      "name": "One item per job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://mascot-api:8000/api/v1/automation/jobs/{{$json.id}}/reconcile",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "reconcile-buffer",
+      "name": "Read Buffer status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300],
+      "credentials": {
+        "httpHeaderAuth": {"id": "REPLACE_AFTER_IMPORT", "name": "Mascot Internal API"}
+      }
     }
   ],
   "connections": {
-    "Webhook": {"main": [[{"node": "Send Approval", "type": "main", "index": 0}]]}
+    "Every 5 minutes": {"main": [[{"node": "Get Buffer jobs", "type": "main", "index": 0}]]},
+    "Get Buffer jobs": {"main": [[{"node": "One item per job", "type": "main", "index": 0}]]},
+    "One item per job": {"main": [[{"node": "Read Buffer status", "type": "main", "index": 0}]]}
   },
-  "active": false
+  "settings": {"timezone": "Europe/Bucharest", "executionOrder": "v1"},
+  "active": false,
+  "versionId": "890c0e0c-9b87-43d3-a742-a53aa5990192"
 }

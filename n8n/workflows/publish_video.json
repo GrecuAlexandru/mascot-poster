@@ -1,41 +1,68 @@
 {
-  "name": "Publish Video",
+  "name": "Mascot - Publish newly approved videos",
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "publish"
+        "rule": {
+          "interval": [{"field": "cronExpression", "expression": "*/2 * * * *"}]
+        }
       },
-      "name": "Approve Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
-      "position": [250, 300]
+      "id": "approval-poll",
+      "name": "Every 2 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
     },
     {
       "parameters": {
-        "url": "http://api:8000/api/v1/jobs/{{$json.job_id}}/publish",
-        "method": "POST",
-        "jsonBody": "={\n  \"platform\": \"tiktok\",\n  \"video_url\": \"{{$json.video_url}}\",\n  \"caption\": \"{{$json.caption}}\",\n  \"disclose_ai_generated\": true\n}"
+        "url": "http://mascot-api:8000/api/v1/automation/jobs?states=APPROVED",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
       },
-      "name": "Publish",
+      "id": "get-approved",
+      "name": "Get approved jobs",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [500, 300]
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "credentials": {
+        "httpHeaderAuth": {"id": "REPLACE_AFTER_IMPORT", "name": "Mascot Internal API"}
+      }
     },
     {
       "parameters": {
-        "chatId": "{{$env TELEGRAM_CHAT_ID}}",
-        "text": "Published successfully! Job: {{$json.job_id}}"
+        "jsCode": "const payload = $input.first().json;\nreturn (Array.isArray(payload) ? payload : []).map(job => ({ json: job }));"
       },
-      "name": "Notify",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [750, 300]
+      "id": "split-approved",
+      "name": "One item per job",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://mascot-api:8000/api/v1/automation/jobs/{{$json.id}}/publish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "publish-approved",
+      "name": "Stage and submit to Buffer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [980, 300],
+      "credentials": {
+        "httpHeaderAuth": {"id": "REPLACE_AFTER_IMPORT", "name": "Mascot Internal API"}
+      }
     }
   ],
   "connections": {
-    "Approve Webhook": {"main": [[{"node": "Publish", "type": "main", "index": 0}]]},
-    "Publish": {"main": [[{"node": "Notify", "type": "main", "index": 0}]]}
+    "Every 2 minutes": {"main": [[{"node": "Get approved jobs", "type": "main", "index": 0}]]},
+    "Get approved jobs": {"main": [[{"node": "One item per job", "type": "main", "index": 0}]]},
+    "One item per job": {"main": [[{"node": "Stage and submit to Buffer", "type": "main", "index": 0}]]}
   },
-  "active": false
+  "settings": {"timezone": "Europe/Bucharest", "executionOrder": "v1"},
+  "active": false,
+  "versionId": "2b58b3ef-f486-4d87-9161-46a1c694954e"
 }

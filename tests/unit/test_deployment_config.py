@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_compose_keeps_api_database_and_search_private():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert "ports" not in services["postgres"]
+    assert "ports" not in services["api"]
+    assert "ports" not in services["searxng"]
+    assert services["worker"]["command"] == ["python", "-m", "app.automation.runtime"]
+    assert services["bot"]["command"] == [
+        "python",
+        "-m",
+        "app.automation.telegram_main",
+    ]
+    assert services["cleanup"]["command"] == [
+        "python",
+        "-m",
+        "app.automation.cleanup_main",
+    ]
+    assert compose["networks"]["n8n-mascot"]["external"] is True
+    assert "n8n-mascot" in services["api"]["networks"]
+
+
+def test_n8n_workflows_are_inactive_private_and_secret_free():
+    workflows = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((ROOT / "n8n" / "workflows").glob("*.json"))
+    ]
+
+    assert workflows
+    assert all(workflow["active"] is False for workflow in workflows)
+    encoded = json.dumps(workflows)
+    assert "http://mascot-api:8000" in encoded
+    assert "TELEGRAM_CHAT_ID" not in encoded
+    assert "AUTOMATION_INTERNAL_API_TOKEN" not in encoded
+    assert "Bearer " not in encoded
+    assert "Mascot Internal API" in encoded
+
+
+def test_generation_schedule_and_target_slots_are_explicit():
+    workflow = json.loads(
+        (ROOT / "n8n" / "workflows" / "generate_video.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    encoded = json.dumps(workflow)
+
+    assert "30 7,15 * * *" in encoded
+    assert "Europe/Bucharest" in encoded
+    assert "hour: 9" in encoded
+    assert "hour: 17" in encoded

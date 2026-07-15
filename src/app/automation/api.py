@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
 from app.automation.job_service import JobNotFound, JobService
-from app.automation.models import AutomationJob
+from app.automation.models import AutomationJob, JobState
 
 
 class CreateAutomationJob(BaseModel):
@@ -61,6 +61,20 @@ def create_automation_router(
             target_duration_seconds=payload.target_duration_seconds,
             voice_id=payload.voice_id,
         )
+
+    @router.get(
+        "/jobs",
+        response_model=list[AutomationJob],
+        dependencies=[Depends(authorize)],
+    )
+    def list_jobs(states: str = "") -> list[AutomationJob]:
+        try:
+            selected = {
+                JobState(item.strip()) for item in states.split(",") if item.strip()
+            }
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail="invalid job state") from error
+        return job_service.list_by_states(selected) if selected else job_service.list_active()
 
     @router.get(
         "/jobs/{job_id}",

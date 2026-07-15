@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.automation.example
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.worktrees
+.superpowers
+output
+cache
+*.mp4
+*.csv

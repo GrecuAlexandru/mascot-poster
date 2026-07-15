@@ -83,6 +83,22 @@ class JobService:
             ).all()
             return [self._snapshot(row) for row in rows]
 
+    def list_by_states(
+        self,
+        states: set[JobState],
+        limit: int = 100,
+    ) -> list[AutomationJob]:
+        if not states:
+            return []
+        with self.database.session() as session:
+            rows = session.scalars(
+                select(AutomationJobRow)
+                .where(AutomationJobRow.state.in_({state.value for state in states}))
+                .order_by(AutomationJobRow.target_at)
+                .limit(limit)
+            ).all()
+            return [self._snapshot(row) for row in rows]
+
     def list_pending_reviews(self, limit: int = 10) -> list[AutomationJob]:
         with self.database.session() as session:
             rows = session.scalars(

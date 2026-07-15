@@ -1,41 +1,39 @@
 {
-  "name": "Analytics Collection",
+  "name": "Mascot - Daily automation audit",
   "nodes": [
     {
       "parameters": {
         "rule": {
-          "interval": [{"field": "hours", "hoursInterval": 6}]
+          "interval": [{"field": "cronExpression", "expression": "15 20 * * *"}]
         }
       },
-      "name": "Every 6 Hours",
-      "type": "n8n-nodes-base.intervalTrigger",
-      "typeVersion": 1,
-      "position": [250, 300]
+      "id": "daily-audit",
+      "name": "Daily at 20:15",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [260, 300]
     },
     {
       "parameters": {
-        "url": "http://api:8000/metrics",
-        "method": "GET"
+        "url": "http://mascot-api:8000/api/v1/automation/jobs?states=FAILED,MISSED",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
       },
-      "name": "Get Metrics",
+      "id": "get-problems",
+      "name": "Read failed and missed jobs",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [500, 300]
-    },
-    {
-      "parameters": {
-        "chatId": "{{$env TELEGRAM_CHAT_ID}}",
-        "text": "Analytics collected:\nTotal jobs: {{$json.total_jobs}}\n{{JSON.stringify($json.by_status)}}"
-      },
-      "name": "Send Summary",
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1,
-      "position": [750, 300]
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "credentials": {
+        "httpHeaderAuth": {"id": "REPLACE_AFTER_IMPORT", "name": "Mascot Internal API"}
+      }
     }
   ],
   "connections": {
-    "Every 6 Hours": {"main": [[{"node": "Get Metrics", "type": "main", "index": 0}]]},
-    "Get Metrics": {"main": [[{"node": "Send Summary", "type": "main", "index": 0}]]}
+    "Daily at 20:15": {"main": [[{"node": "Read failed and missed jobs", "type": "main", "index": 0}]]}
   },
-  "active": false
+  "settings": {"timezone": "Europe/Bucharest", "executionOrder": "v1"},
+  "active": false,
+  "versionId": "cc62d50a-6b42-4d91-b338-528608b21585"
 }

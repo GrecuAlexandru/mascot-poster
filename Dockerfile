@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+RUN useradd --create-home --uid 1000 mascot
+
 COPY pyproject.toml .
 COPY src/ src/
 
@@ -15,11 +17,16 @@ RUN pip install --no-cache-dir -e .
 
 COPY assets/ assets/
 COPY templates/ templates/
+COPY data/ data/
 COPY scripts/ scripts/
 COPY tests/ tests/
 
+RUN mkdir -p /app/output && chown -R mascot:mascot /app
+
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
+
+USER mascot
 
 EXPOSE 8000
 

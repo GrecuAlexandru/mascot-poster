@@ -1,83 +1,93 @@
+x-mascot-app: &mascot-app
+  build: .
+  restart: unless-stopped
+  env_file:
+    - ${MASCOT_ENV_FILE:?Set MASCOT_ENV_FILE to the external secrets file}
+  environment:
+    AUTOMATION_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    SEARXNG_BASE_URL: http://searxng:8080
+  volumes:
+    - ${MASCOT_OUTPUT_DIR:-/srv/mascot-poster/output}:/app/output
+    - ${MASCOT_DATA_DIR:-/srv/mascot-poster/data}:/app/data
+  networks:
+    - backend
+  depends_on:
+    postgres:
+      condition: service_healthy
+    searxng:
+      condition: service_healthy
+
 services:
   api:
-    build: .
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./assets:/app/assets
-      - ./templates:/app/templates
-      - ./output:/app/output
-      - ./tests/fixtures:/app/tests/fixtures
-    env_file: .env
-    environment:
-      SEARXNG_BASE_URL: http://searxng:8080
+    <<: *mascot-app
+    container_name: mascot-api
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    networks:
+      - backend
+      - n8n-mascot
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   worker:
-    build: .
-    command: python -c "import time; time.sleep(999999)"
-    restart: unless-stopped
-    volumes:
-      - ./assets:/app/assets
-      - ./templates:/app/templates
-      - ./output:/app/output
-    env_file: .env
-    environment:
-      SEARXNG_BASE_URL: http://searxng:8080
+    <<: *mascot-app
+    command: ["python", "-m", "app.automation.runtime"]
 
-  searxng:
-    image: searxng/searxng:latest
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
-      - searxng_cache:/var/cache/searxng
-    environment:
-      SEARXNG_BASE_URL: ${SEARXNG_PUBLIC_BASE_URL:-http://localhost:8080/}
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-local-development-only-change-before-public-use}
-      SEARXNG_BIND_ADDRESS: 0.0.0.0
-      SEARXNG_PORT: 8080
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/search?q=health&format=json&categories=general', timeout=5)\""]
-      interval: 15s
-      timeout: 10s
-      retries: 8
-      start_period: 20s
+  bot:
+    <<: *mascot-app
+    command: ["python", "-m", "app.automation.telegram_main"]
+
+  cleanup:
+    <<: *mascot-app
+    command: ["python", "-m", "app.automation.cleanup_main"]
 
   postgres:
-    image: postgres:17
+    image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: app
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ${MASCOT_POSTGRES_DIR:-/srv/mascot-poster/postgres}:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
-  redis:
-    image: redis:7
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest}
     restart: unless-stopped
-    ports:
-      - "6379:6379"
-
-  n8n:
-    image: n8nio/n8n:latest
-    restart: unless-stopped
-    ports:
-      - "5678:5678"
+    env_file:
+      - ${MASCOT_ENV_FILE:?Set MASCOT_ENV_FILE to the external secrets file}
     environment:
-      N8N_HOST: localhost
-      N8N_PORT: 5678
-      N8N_PROTOCOL: http
-      NODE_ENV: production
-      GENERIC_TIMEZONE: Europe/Bucharest
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_BIND_ADDRESS: 0.0.0.0
+      SEARXNG_PORT: 8080
     volumes:
-      - ./n8n:/home/node/.n8n
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng-cache:/var/cache/searxng
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- 'http://127.0.0.1:8080/search?q=health&format=json' >/dev/null"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
 volumes:
-  pgdata:
-  searxng_cache:
+  searxng-cache:
+
+networks:
+  backend:
+    internal: true
+  n8n-mascot:
+    external: true
+    name: n8n-mascot
