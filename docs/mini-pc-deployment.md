@@ -130,12 +130,14 @@ The daily audit workflow is optional. The generator starts at 07:30 and 15:30; t
 
 1. Run the generation workflow manually.
 2. Confirm PostgreSQL reports the job as `QUEUED`, then `RUNNING`, then `WAITING_FOR_APPROVAL` through the workflow response or `/status` in Telegram.
-3. Inspect the actual MP4 in Telegram. Test one regeneration button and confirm the old approval buttons expire.
-4. Approve the regenerated video.
-5. Run the publish workflow and confirm exactly one Buffer post is created with the expected caption, video, AI disclosure, and target time.
-6. Run reconciliation after publication and confirm the job becomes `PUBLISHED`.
-7. Confirm the R2 object is retained initially. Its application cleanup deadline is 48 hours after confirmed publication; the local job directory is retained for 30 days.
-8. Test rejection on a second job and confirm no R2 object and no Buffer post are created.
+3. Inspect the actual MP4 and final social description in Telegram. The description should start with `X vs Y`, contain one concrete supported contrast and a question, and end with three to five real hashtags led by `#pufaila #stiaica`.
+4. Confirm `_pipeline/social_description.json` contains the identical `publishable_text`. Recent descriptions are retained in bounded `/srv/mascot-poster/data/description_history.json`; neither file contains credentials.
+5. Test one regeneration button and confirm the old approval buttons expire. Script/full regeneration replaces the description; image-only regeneration preserves it.
+6. Approve the regenerated video.
+7. Run the publish workflow and confirm exactly one Buffer post is created with the Telegram-approved description byte-for-byte, expected video, AI disclosure, and target time.
+8. Run reconciliation after publication and confirm the job becomes `PUBLISHED`.
+9. Confirm the R2 object is retained initially. Its application cleanup deadline is 48 hours after confirmed publication; the local job directory is retained for 30 days.
+10. Test rejection on a second job and confirm no R2 object and no Buffer post are created.
 
 Do not enable unattended posting until both approval and rejection tests behave exactly as described.
 
@@ -150,3 +152,5 @@ docker compose --env-file /home/alexandru/secrets/mascot-poster.env stop api wor
 Never use `docker compose down -v` for this stack: it can remove named data such as the SearXNG cache, and destructive volume operations require a verified backup first. PostgreSQL, `/srv/mascot-poster/data`, `/srv/mascot-poster/output`, the external secrets file, and the n8n workflow database all need an external backup and restore test before this system is treated as recoverable.
 
 Useful states are `QUEUED`, `RUNNING`, `WAITING_FOR_APPROVAL`, `APPROVED`, `STAGING_MEDIA`, `SCHEDULED`, `PUBLISHING`, `PUBLISHED`, `REJECTED`, `MISSED`, `FAILED`, and `CANCELLED`. Approval is bound to the exact MP4 hash. An unapproved job more than three hours past its target becomes `MISSED`; it is never posted later by accident.
+
+Social descriptions are generated only after the final narration timing repair is complete. The checkpoint makes retries resumable, and two description-model failures fall back to the legacy AI script caption with normalized branded hashtags rather than discarding a completed video. Existing submitted or published posts are never edited retroactively.
