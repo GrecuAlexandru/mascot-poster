@@ -4,6 +4,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from app.automation.database import AutomationDatabase
 from app.automation.job_service import JobService
 from app.automation.models import JobState, RegenerationKind
@@ -119,6 +121,44 @@ def test_regenerate_script_callback_invalidates_approval_and_requeues(tmp_path: 
     assert stored.state is JobState.QUEUED
     assert stored.regeneration_kind is RegenerationKind.SCRIPT
     assert stored.video_sha256 is None
+
+
+@pytest.mark.parametrize(
+    ("action", "expected"),
+    [
+        ("approve", "Ai ales: Aprobă. Aprobat pentru publicare."),
+        ("reject", "Ai ales: Respinge. Videoclipul a fost respins."),
+        (
+            "regen_script",
+            "Ai ales: Script nou. Regenerarea a fost pusă în coadă.",
+        ),
+        (
+            "regen_images",
+            "Ai ales: Imagini noi. Regenerarea a fost pusă în coadă.",
+        ),
+        (
+            "regen_full",
+            "Ai ales: Totul nou. Regenerarea a fost pusă în coadă.",
+        ),
+        ("cancel", "Ai ales: Anulează. Jobul a fost anulat."),
+    ],
+)
+def test_callback_sends_explicit_chat_confirmation(
+    tmp_path: Path, action: str, expected: str
+):
+    service = build_service(tmp_path)
+    job = ready_job(service, tmp_path)
+    client = FakeTelegramClient()
+    bot = TelegramApprovalBot(service, client, allowed_user_id=7, review_chat_id=8)
+
+    asyncio.run(bot.handle_update(callback_update(job, action)))
+
+    assert client.messages == [
+        {
+            "chat_id": 8,
+            "text": expected,
+        }
+    ]
 
 
 def test_status_command_lists_active_jobs_only_for_owner(tmp_path: Path):

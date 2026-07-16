@@ -76,6 +76,18 @@ def test_reference_caption_uses_one_fixed_highlight_color(tmp_path: Path) -> Non
     assert getattr(renderer, "caption_highlight_color", None) == (232, 117, 96)
 
 
+def test_reference_renderer_reloads_an_overwritten_product_image(tmp_path: Path) -> None:
+    renderer = _caption_renderer(tmp_path)
+    product_path = tmp_path / "left.png"
+    Image.new("RGBA", (20, 20), (255, 0, 0, 255)).save(product_path)
+
+    assert renderer._image(product_path).getpixel((0, 0)) == (255, 0, 0, 255)
+
+    Image.new("RGBA", (20, 20), (0, 0, 255, 255)).save(product_path)
+
+    assert renderer._image(product_path).getpixel((0, 0)) == (0, 0, 255, 255)
+
+
 def test_reference_renderer_uses_bold_italic_font_for_object_labels(tmp_path: Path) -> None:
     renderer = _caption_renderer(tmp_path)
 

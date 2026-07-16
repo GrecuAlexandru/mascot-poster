@@ -73,6 +73,7 @@ class TelegramApprovalBot:
             return
         try:
             job = self.job_service.get_by_action_token(token)
+            confirmation: str | None = None
             if action == "approve":
                 result = self.job_service.approve(
                     job.id,
@@ -85,6 +86,7 @@ class TelegramApprovalBot:
                     if result.state is JobState.APPROVED
                     else "Fereastra de aprobare a expirat; jobul este MISSED."
                 )
+                confirmation = f"Ai ales: Aprobă. {text}"
             elif action == "reject":
                 self.job_service.reject(
                     job.id,
@@ -93,6 +95,7 @@ class TelegramApprovalBot:
                     telegram_chat_id=chat_id,
                 )
                 text = "Respins."
+                confirmation = "Ai ales: Respinge. Videoclipul a fost respins."
             elif action in {"regen_script", "regen_images", "regen_full"}:
                 kind = {
                     "regen_script": RegenerationKind.SCRIPT,
@@ -101,14 +104,25 @@ class TelegramApprovalBot:
                 }[action]
                 self.job_service.request_regeneration(job.id, kind)
                 text = "Regenerare pusă în coadă."
+                label = {
+                    "regen_script": "Script nou",
+                    "regen_images": "Imagini noi",
+                    "regen_full": "Totul nou",
+                }[action]
+                confirmation = (
+                    f"Ai ales: {label}. Regenerarea a fost pusă în coadă."
+                )
             elif action == "cancel":
                 self.job_service.cancel(job.id)
                 text = "Anulat."
+                confirmation = "Ai ales: Anulează. Jobul a fost anulat."
             else:
                 text = "Comandă necunoscută."
         except (JobNotFound, InvalidTransition):
             text = "Acțiunea a expirat sau jobul s-a schimbat."
         await self.client.answer_callback(callback_id, text)
+        if confirmation is not None:
+            await self.client.send_message(chat_id=chat_id, text=confirmation)
 
     async def _handle_message(self, message: dict[str, Any]) -> None:
         user_id = int(message.get("from", {}).get("id", 0))

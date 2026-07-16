@@ -29,7 +29,7 @@ class ReferenceRenderer:
         self.font_path = font_path
         self._label_font_path = self._resolve_label_font_path(font_path)
         self._cta_font_path = self._resolve_cta_font_path(font_path)
-        self._images: dict[Path, Image.Image] = {}
+        self._images: dict[Path, tuple[tuple[int, int, int], Image.Image]] = {}
         self._bubble_cache: dict[str, tuple[Image.Image, int]] = {}
         self._mascot_paths = self._load_mascot_paths()
         self._calibration_service = MascotCalibrationService(mascots_dir)
@@ -476,15 +476,18 @@ class ReferenceRenderer:
         }
 
     def _image(self, path: Path) -> Image.Image:
-        if path not in self._images:
+        stat = path.stat()
+        signature = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+        cached = self._images.get(path)
+        if cached is None or cached[0] != signature:
             image = Image.open(path).convert("RGBA")
             # Crop away transparent padding so the visible object, not the raw
             # image, fills the region — keeps left and right objects the same size.
             bbox = image.getchannel("A").getbbox()
             if bbox:
                 image = image.crop(bbox)
-            self._images[path] = image
-        return self._images[path]
+            self._images[path] = (signature, image)
+        return self._images[path][1]
 
     @staticmethod
     def _fit(image: Image.Image, region: Region, scale: float = 1.0) -> Image.Image:
