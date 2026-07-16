@@ -70,3 +70,5 @@ def test_generation_schedule_and_target_slots_are_explicit():
     assert "Europe/Bucharest" in encoded
     assert "hour: 9" in encoded
     assert "hour: 17" in encoded
+    assert "local < morning" in encoded
+    assert "plus({ days: 1 })" in encoded
