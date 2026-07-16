@@ -83,6 +83,26 @@ def test_worker_runs_real_generation_contract_and_records_artifacts(
     assert generator.requests[0].voice_id == "voice-1"
 
 
+def test_worker_uses_language_default_when_job_has_no_voice(
+    tmp_path: Path, job_service: JobService
+):
+    job_service.create_job(
+        target_at=datetime.now(timezone.utc) + timedelta(hours=2),
+        language="ro",
+    )
+    generator = FakeGenerator(tmp_path / "jobs")
+    worker = GenerationWorker(
+        job_service,
+        generator,
+        worker_id="worker-1",
+        default_voice_ids={"ro": "romanian-voice", "en": "english-voice"},
+    )
+
+    asyncio.run(worker.run_once())
+
+    assert generator.requests[0].voice_id == "romanian-voice"
+
+
 def test_worker_marks_generation_failure_without_leaking_exception(
     tmp_path: Path, job_service: JobService
 ):

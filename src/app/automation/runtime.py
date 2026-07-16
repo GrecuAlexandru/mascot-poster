@@ -55,12 +55,17 @@ async def run_generation_worker() -> None:
     from app.automation.worker import GenerationWorker
 
     automation = get_automation_settings()
-    generator = build_reference_generation_service(get_settings())
+    generation = get_settings()
+    generator = build_reference_generation_service(generation)
     worker = GenerationWorker(
         build_job_service(),
         generator,
         worker_id=automation.worker_id,
         lease_seconds=automation.worker_lease_seconds,
+        default_voice_ids={
+            "ro": generation.elevenlabs_voice_id_ro,
+            "en": generation.elevenlabs_voice_id_en,
+        },
     )
     await worker.run_forever(automation.worker_poll_seconds)
 

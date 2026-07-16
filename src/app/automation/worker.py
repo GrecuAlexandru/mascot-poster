@@ -20,11 +20,13 @@ class GenerationWorker:
         generator: Any,
         worker_id: str,
         lease_seconds: int = 300,
+        default_voice_ids: dict[str, str] | None = None,
     ):
         self.job_service = job_service
         self.generator = generator
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
+        self.default_voice_ids = default_voice_ids or {}
 
     async def run_once(self) -> AutomationJob | None:
         job = self.job_service.claim_next(self.worker_id, self.lease_seconds)
@@ -41,7 +43,7 @@ class GenerationWorker:
                 topic_override=job.topic_override,
                 language=job.language,
                 target_duration_seconds=job.target_duration_seconds,
-                voice_id=job.voice_id,
+                voice_id=job.voice_id or self.default_voice_ids.get(job.language),
             )
             result = await self.generator.generate(request, job_id=job.id)
             topic, caption = self._read_metadata(result.render_result.video_path, job)
