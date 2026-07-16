@@ -138,6 +138,47 @@ class ReferenceScriptPackage(BaseModel):
         return len(self.narration_text.split())
 
 
+class SocialDescription(BaseModel):
+    description: str
+    hashtags: list[str] = Field(default_factory=list)
+    fallback_used: bool = False
+
+    @model_validator(mode="after")
+    def validate_description(self) -> "SocialDescription":
+        self.description = self.description.strip()
+        if not self.description:
+            raise ValueError("description must not be blank")
+        if not self.fallback_used:
+            word_count = len(self.description.split())
+            if not 25 <= word_count <= 45:
+                raise ValueError("description must contain 25-45 words")
+            final_sentence = self.description.rstrip(" 🐹👴🏻🍑❄️🌿⚡🌲💎🦴")
+            if not final_sentence.endswith("?"):
+                raise ValueError("description must end with a question")
+        return self
+
+    @property
+    def normalized_hashtags(self) -> list[str]:
+        normalized: list[str] = []
+        for raw in ["pufaila", "stiaica", *self.hashtags]:
+            folded = unicodedata.normalize("NFKD", str(raw).strip().lstrip("#"))
+            token = "".join(
+                character.lower()
+                for character in folded
+                if character.isascii() and character.isalnum()
+            )
+            if token and token not in normalized:
+                normalized.append(token)
+            if len(normalized) == 5:
+                break
+        return normalized
+
+    @property
+    def publishable_text(self) -> str:
+        hashtags = " ".join(f"#{token}" for token in self.normalized_hashtags)
+        return f"{self.description}\n\n{hashtags}" if hashtags else self.description
+
+
 class DirectionCue(BaseModel):
     beat_id: str = Field(min_length=1)
     word_index: int = Field(ge=0)
