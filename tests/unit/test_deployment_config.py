@@ -31,6 +31,17 @@ def test_compose_keeps_api_database_and_search_private():
     assert "n8n-mascot" in services["api"]["networks"]
 
 
+def test_internet_facing_services_have_egress_without_exposing_postgres():
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert compose["networks"]["backend"]["internal"] is True
+    assert compose["networks"]["egress"].get("internal", False) is False
+    assert services["postgres"]["networks"] == ["backend"]
+    for service_name in ("api", "worker", "bot", "cleanup", "searxng"):
+        assert "egress" in services[service_name]["networks"]
+
+
 def test_n8n_workflows_are_inactive_private_and_secret_free():
     workflows = [
         json.loads(path.read_text(encoding="utf-8"))
