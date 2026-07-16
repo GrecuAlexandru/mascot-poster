@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,7 @@ class PublicationService:
             current = self._as_utc(now)
             mode = "customScheduled" if current < target_at else "shareNow"
             due_at = target_at if mode == "customScheduled" else None
+            thumbnail_offset_ms = self._thumbnail_offset(video_path)
             post = await self.buffer.create_video_post(
                 channel_id=self.channel_id,
                 text=job.caption or job.topic or "",
@@ -61,7 +63,7 @@ class PublicationService:
                 mode=mode,
                 due_at=due_at,
                 is_ai_generated=True,
-                thumbnail_offset_ms=self.thumbnail_offset_ms,
+                thumbnail_offset_ms=thumbnail_offset_ms,
             )
             return self.job_service.record_buffer_post(
                 job.id,
@@ -95,3 +97,16 @@ class PublicationService:
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+
+    def _thumbnail_offset(self, video_path: Path) -> int:
+        metadata_path = video_path.with_name("thumbnail.json")
+        if not metadata_path.is_file():
+            return self.thumbnail_offset_ms
+        try:
+            payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+            value = payload["thumbnail_offset_ms"]
+        except (KeyError, TypeError, json.JSONDecodeError, OSError):
+            return self.thumbnail_offset_ms
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return self.thumbnail_offset_ms
+        return value

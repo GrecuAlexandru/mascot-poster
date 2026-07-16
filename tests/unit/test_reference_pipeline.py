@@ -195,6 +195,7 @@ def test_compiled_video_spec_requires_existing_media(tmp_path: Path) -> None:
     assert spec.template == "reference_v1"
     assert spec.fps == 30
     assert spec.narration_end_seconds == pytest.approx(0.5)
+    assert spec.thumbnail_timestamp_seconds == pytest.approx(0.4667, abs=0.001)
     assert spec.total_duration_seconds == pytest.approx(0.5)
 
     with pytest.raises(ValueError, match="left_image"):
@@ -235,7 +236,39 @@ def test_compiled_video_spec_adds_outro_after_last_speech(tmp_path: Path) -> Non
     # while the video still runs a full outro after narration ends.
     assert spec.cta_start_seconds == pytest.approx(24.0)
     assert spec.narration_end == pytest.approx(25.678)
+    assert spec.thumbnail_timestamp_seconds == pytest.approx(2.0)
     assert spec.total_duration_seconds == pytest.approx(25.678)
+
+
+def test_compiled_video_spec_selects_diferenta_word_for_thumbnail(tmp_path: Path) -> None:
+    left = tmp_path / "left.png"
+    right = tmp_path / "right.png"
+    audio = tmp_path / "narration.wav"
+    for path in (left, right, audio):
+        path.write_bytes(b"asset")
+    transcript = TimedTranscript(
+        words=[
+            TimedWord(word="Avem", start=0.0, end=0.2),
+            TimedWord(word="mere.", start=0.2, end=0.5),
+            TimedWord(word="Dar", start=0.6, end=0.8),
+            TimedWord(word="care", start=0.8, end=1.0),
+            TimedWord(word="e", start=1.0, end=1.1),
+            TimedWord(word="diferența?", start=1.1, end=1.5),
+        ],
+        beats=[TimedBeat(id="hook", start=0.0, end=1.5, pause_end=1.7)],
+        duration_seconds=1.7,
+    )
+
+    spec = CompiledVideoSpec(
+        left_label="Măr verde",
+        right_label="Măr roșu",
+        left_image=left,
+        right_image=right,
+        narration_audio=audio,
+        transcript=transcript,
+    )
+
+    assert spec.thumbnail_timestamp_seconds == pytest.approx(1.3)
 
 
 def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:

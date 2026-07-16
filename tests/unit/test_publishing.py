@@ -102,6 +102,64 @@ def test_future_approved_video_is_custom_scheduled_in_buffer(tmp_path: Path):
     assert buffer.creates[0]["is_ai_generated"] is True
 
 
+def test_publish_uses_renderer_thumbnail_offset_metadata(tmp_path: Path):
+    service = build_service(tmp_path)
+    now = datetime.now(timezone.utc)
+    target = now + timedelta(hours=2)
+    job = approved_job(service, tmp_path, target)
+    Path(job.video_path).with_name("thumbnail.json").write_text(
+        '{"thumbnail_offset_ms": 24750}',
+        encoding="utf-8",
+    )
+    buffer = FakeBuffer()
+    publisher = PublicationService(
+        service,
+        FakeR2(),
+        buffer,
+        "channel-1",
+        thumbnail_offset_ms=2000,
+    )
+
+    asyncio.run(publisher.publish(job.id, now=now))
+
+    assert buffer.creates[0]["thumbnail_offset_ms"] == 24750
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        None,
+        "not-json",
+        '{"thumbnail_offset_ms": "24750"}',
+        '{"thumbnail_offset_ms": true}',
+        '{"thumbnail_offset_ms": -1}',
+    ],
+)
+def test_publish_falls_back_for_missing_or_invalid_thumbnail_metadata(
+    tmp_path: Path, metadata: str | None
+):
+    service = build_service(tmp_path)
+    now = datetime.now(timezone.utc)
+    job = approved_job(service, tmp_path, now + timedelta(hours=2))
+    if metadata is not None:
+        Path(job.video_path).with_name("thumbnail.json").write_text(
+            metadata,
+            encoding="utf-8",
+        )
+    buffer = FakeBuffer()
+    publisher = PublicationService(
+        service,
+        FakeR2(),
+        buffer,
+        "channel-1",
+        thumbnail_offset_ms=2000,
+    )
+
+    asyncio.run(publisher.publish(job.id, now=now))
+
+    assert buffer.creates[0]["thumbnail_offset_ms"] == 2000
+
+
 def test_approval_after_target_but_within_window_shares_now(tmp_path: Path):
     service = build_service(tmp_path)
     now = datetime.now(timezone.utc)

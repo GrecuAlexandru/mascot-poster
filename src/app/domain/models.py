@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from pathlib import Path
 from typing import Literal, Optional
 from uuid import UUID, uuid4
@@ -281,6 +282,7 @@ class RenderResult(BaseModel):
     poster_path: Path
     contact_sheet_path: Path
     timeline_path: Path
+    thumbnail_timestamp_ms: Optional[int] = Field(default=None, ge=0)
     transcript_path: Optional[Path] = None
     direction_path: Optional[Path] = None
     image_provenance_path: Optional[Path] = None
@@ -425,6 +427,27 @@ class CompiledVideoSpec(BaseModel):
     @property
     def total_duration_seconds(self) -> float:
         return self.narration_end + self.outro_duration_seconds
+
+    @property
+    def thumbnail_timestamp_seconds(self) -> float:
+        target = ("dar", "care", "e", "diferenta")
+        words = self.transcript.words
+        normalized = [self._normalize_thumbnail_word(word.word) for word in words]
+        for index in range(len(normalized) - len(target) + 1):
+            if tuple(normalized[index:index + len(target)]) == target:
+                difference = words[index + len(target) - 1]
+                return (difference.start + difference.end) / 2
+        final_frame_time = max(0.0, self.total_duration_seconds - 1 / self.fps)
+        return min(2.0, final_frame_time)
+
+    @staticmethod
+    def _normalize_thumbnail_word(value: str) -> str:
+        decomposed = unicodedata.normalize("NFKD", value.casefold())
+        return "".join(
+            character
+            for character in decomposed
+            if character.isalnum() and not unicodedata.combining(character)
+        )
 
     @field_validator("left_image", "right_image", "narration_audio")
     @classmethod

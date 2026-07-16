@@ -312,6 +312,14 @@ def test_reference_render_service_streams_dynamic_frames_and_writes_artifacts(tm
     assert ffmpeg.frames == 15
     assert result.video_path.read_bytes() == b"final-video"
     assert result.poster_path.exists()
+    assert result.thumbnail_timestamp_ms == 467
+    thumbnail_metadata = __import__("json").loads(
+        (tmp_path / "output" / "thumbnail.json").read_text(encoding="utf-8")
+    )
+    assert thumbnail_metadata == {
+        "thumbnail_offset_ms": 467,
+    }
+
     assert result.contact_sheet_path.exists()
     assert result.timeline_path.exists()
     assert result.transcript_path is not None and result.transcript_path.exists()
