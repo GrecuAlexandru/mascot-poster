@@ -11,6 +11,12 @@ from app.domain.models import DirectionCue, DirectionPlan, ReferenceScriptPackag
 class ReferenceDirectionValidator:
     left_poses = {MascotPose.POINT_LEFT, MascotPose.POINT_UP_LEFT}
     right_poses = {MascotPose.POINT_RIGHT, MascotPose.POINT_UP_RIGHT}
+    directional_poses = {
+        MascotPose.POINT_LEFT,
+        MascotPose.POINT_RIGHT,
+        MascotPose.POINT_UP_LEFT,
+        MascotPose.POINT_UP_RIGHT,
+    }
     mirror_poses = {
         MascotPose.POINT_LEFT: MascotPose.POINT_RIGHT,
         MascotPose.POINT_RIGHT: MascotPose.POINT_LEFT,
@@ -23,18 +29,29 @@ class ReferenceDirectionValidator:
         plan: DirectionPlan,
         script: ReferenceScriptPackage,
     ) -> DirectionPlan:
-        left_key = self._item_key(script.left_item)
-        right_key = self._item_key(script.right_item)
-        beat_texts = {beat.id: beat.text.casefold() for beat in script.all_beats}
+        left_words = self._tokens(script.left_item)
+        right_words = self._tokens(script.right_item)
+        beat_side = {
+            beat.id: self._beat_side(beat.text, left_words, right_words)
+            for beat in script.all_beats
+        }
         cues: list[DirectionCue] = []
         for cue in plan.cues:
-            text = beat_texts.get(cue.beat_id, "")
-            mentions_left = bool(left_key) and left_key in text
-            mentions_right = bool(right_key) and right_key in text
-            if mentions_left == mentions_right:
+            side = beat_side.get(cue.beat_id, Focus.NEUTRAL)
+            if side == Focus.BOTH:
                 cues.append(cue)
                 continue
-            side = Focus.LEFT if mentions_left else Focus.RIGHT
+            if side == Focus.NEUTRAL:
+                # This beat names neither product (a continuation or a summary line). A cue that
+                # points at or focuses one side here would highlight the wrong item, so drop it and
+                # let the frame keep the previous, correct focus. Genuine both/neutral cues stay.
+                if (
+                    cue.product_focus in (Focus.LEFT, Focus.RIGHT)
+                    or cue.mascot_pose in self.directional_poses
+                ):
+                    continue
+                cues.append(cue)
+                continue
             wrong_poses = self.right_poses if side == Focus.LEFT else self.left_poses
             update: dict = {}
             if cue.product_focus in (Focus.LEFT, Focus.RIGHT) and cue.product_focus != side:
@@ -44,6 +61,19 @@ class ReferenceDirectionValidator:
             cues.append(cue.model_copy(update=update) if update else cue)
         balanced = self._enforce_comparison_cues(DirectionPlan(cues=cues), script)
         return self._enforce_hook_cues(balanced, script)
+
+    @classmethod
+    def _beat_side(cls, text: str, left_words: list[str], right_words: list[str]) -> Focus:
+        words = cls._tokens(text)
+        left_pos = cls._find_item(words, left_words, right_words)
+        right_pos = cls._find_item(words, right_words, left_words)
+        if left_pos is not None and right_pos is not None:
+            return Focus.BOTH
+        if left_pos is not None:
+            return Focus.LEFT
+        if right_pos is not None:
+            return Focus.RIGHT
+        return Focus.NEUTRAL
 
     def _enforce_comparison_cues(
         self,
@@ -183,12 +213,6 @@ class ReferenceDirectionValidator:
             if words[index:index + len(phrase)] == phrase:
                 return index
         return None
-
-    @staticmethod
-    def _item_key(item: str) -> str:
-        head = re.split(r"[:,(–—]", item, maxsplit=1)[0]
-        key = head.casefold().strip()
-        return key if len(key) >= 3 else ""
 
     # The mascot points up-and-to-the-side so it looks toward the item it discusses.
     _prefer_up = {

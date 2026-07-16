@@ -1236,6 +1236,38 @@ def test_mascot_preparer_removes_only_border_connected_background(tmp_path: Path
     assert alpha.getbbox()[3] == 120
 
 
+def test_mascot_preparer_product_keeps_near_white_object_intact(tmp_path: Path) -> None:
+    # A translucent tub of white cheese: near-white object on white background with a leaky edge.
+    # Color-keying eats through it; prepare_product must keep the object fully opaque.
+    source = tmp_path / "product.png"
+    destination = tmp_path / "prepared.png"
+    image = Image.new("RGB", (400, 400), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((120, 120, 280, 280), fill=(250, 250, 250), outline=(160, 160, 160), width=3)
+    draw.rectangle((195, 117, 205, 127), fill=(252, 252, 252))  # near-white gap that leaks a flood
+    image.save(source)
+
+    MascotAssetPreparer(canvas_size=(512, 512), padding=16, tolerance=32).prepare_product(
+        source, destination
+    )
+
+    prepared = Image.open(destination).convert("RGBA")
+    alpha = prepared.getchannel("A")
+    # A transparent trimmed margin exists, so the image still counts as transparent.
+    assert alpha.getextrema() == (0, 255)
+    assert prepared.getpixel((0, 0))[3] == 0
+    # The object interior is never eaten: its center is fully opaque with no holes.
+    bounds = alpha.getbbox()
+    cx = (bounds[0] + bounds[2]) // 2
+    cy = (bounds[1] + bounds[3]) // 2
+    center_alpha = [
+        prepared.getpixel((cx + dx, cy + dy))[3]
+        for dx in range(-20, 21, 10)
+        for dy in range(-20, 21, 10)
+    ]
+    assert min(center_alpha) == 255
+
+
 def test_mascot_validation_rejects_opaque_alpha_and_border(tmp_path: Path) -> None:
     mascot_dir = tmp_path / "mascot"
     mascot_dir.mkdir()

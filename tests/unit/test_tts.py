@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.domain.models import TimedWord as DomainTimedWord
 from app.providers.tts.base import TTSSettings, TTSResult, TimedWord
 from app.services.alignment_service import AlignmentService
 from app.services.audio_service import AudioService
@@ -52,6 +53,21 @@ class TestTTSResult:
         assert r.provider == "elevenlabs"
         assert r.duration_seconds == 60.0
         assert r.timed_words is None
+
+    def test_accepts_domain_timed_words(self):
+        word = DomainTimedWord(word="Avem", start=0.0, end=0.43)
+
+        result = TTSResult(
+            path=Path("/tmp/out.mp3"),
+            duration_seconds=0.43,
+            provider="elevenlabs",
+            model="eleven_multilingual_v2",
+            character_count=4,
+            estimated_cost_usd=0.0,
+            timed_words=[word],
+        )
+
+        assert result.timed_words == [word]
 
 
 class TestAlignmentService:

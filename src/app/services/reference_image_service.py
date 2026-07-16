@@ -339,6 +339,8 @@ class ReferenceImageService:
             "Create one photorealistic side-by-side paired product photograph on a wide canvas. "
             "Place the LEFT requested subject entirely inside the left half and the RIGHT requested "
             "subject entirely inside the right half, with no divider and nothing crossing the center. "
+            "Show exactly one object in each half: no duplicates, no extra copies, no collage. Keep each "
+            "object upright, centered in its half, in sharp focus, with a small margin so nothing is cropped. "
             "Use the two input images only as composition references. Correct these validator issues: "
             f"{repairs}. Match visible object bounding-box width and height, vertical center, camera "
             "elevation, perspective, crop, lighting direction, shadow softness, and background treatment. "
@@ -463,8 +465,11 @@ class ReferenceImageService:
             f"It must visibly show: {attributes}. Required composition details: {required}. "
             f"{interface_guidance}{text_guidance}"
             f"{repair_guidance}{reference_guidance}"
-            f"Pair style: {generation_style}. The full subject must be perfectly upright with no roll or tilt, "
-            "with its vertical centerline aligned to the canvas midpoint. It must be centered and completely visible, "
+            f"Pair style: {generation_style}. Show exactly one {brief.exact_subject}: a single object, with "
+            "no duplicates, no mirrored twin, no split screen, and no collage. "
+            "The full subject must be perfectly upright with no roll or tilt, "
+            "with its vertical centerline aligned to the canvas midpoint. It must be centered, in sharp focus, and "
+            "completely visible with a small even margin so nothing touches or is cropped by the frame edges, "
             f"occupying about 72 percent of the canvas on a solid pure-white background extending to every edge. "
             "Use physically plausible real-world proportions, materials, and lighting; do not produce "
             "an illustration, cartoon, CGI render, or product mockup. Do not replace the complete subject with a detail, control, accessory, or one component "
@@ -532,7 +537,7 @@ class ReferenceImageService:
                 canvas_size=(1024, 1024),
                 padding=24,
                 tolerance=32,
-            ).prepare(path, prepared_path)
+            ).prepare_product(path, prepared_path)
             prepared_path.replace(path)
         finally:
             prepared_path.unlink(missing_ok=True)

@@ -48,6 +48,67 @@ class MascotAssetPreparer:
         canvas.save(destination, format="PNG")
         return destination
 
+    def prepare_product(self, source: Path, destination: Path) -> Path:
+        # Product photos are generated on a white background. Color-keying that background is unsafe
+        # for near-white or translucent objects (white cheese, glass, clear plastic): the flood fill
+        # eats through the object because its own pixels are within tolerance of the background and
+        # connect to the edge. Because the final video canvas is white, we instead keep the object
+        # fully opaque on its white background and only make the trimmed outer margin transparent.
+        # Nothing inside the object is ever removed, so it can never be corrupted.
+        image = Image.open(source).convert("RGBA")
+        flattened = Image.new("RGBA", image.size, (255, 255, 255, 255))
+        flattened.alpha_composite(image)
+
+        content = self._content_mask(flattened)
+        bounds = content.getbbox()
+        if bounds is None:
+            raise ValueError(f"No product content detected in {source}")
+        white_pixels = content.histogram()[0]
+        total_pixels = content.width * content.height
+        if white_pixels / total_pixels < 0.06:
+            # Almost nothing is white: this is not a product photographed on a white background
+            # (e.g. an all-dark or full-bleed image), so reject it instead of keeping the garbage.
+            raise ValueError(f"No white background to trim in {source}")
+        left, top, right, bottom = bounds
+        pad = 6
+        crop_box = (
+            max(0, left - pad),
+            max(0, top - pad),
+            min(flattened.width, right + pad),
+            min(flattened.height, bottom + pad),
+        )
+        cropped = flattened.crop(crop_box)
+        opaque = Image.new("RGBA", cropped.size, (255, 255, 255, 255))
+        opaque.alpha_composite(cropped)
+
+        canvas_width, canvas_height = self.canvas_size
+        max_width = canvas_width - self.padding * 2
+        max_height = canvas_height - self.padding * 2
+        scale = min(max_width / opaque.width, max_height / opaque.height)
+        size = (
+            max(1, round(opaque.width * scale)),
+            max(1, round(opaque.height * scale)),
+        )
+        resized = opaque.resize(size, Image.Resampling.LANCZOS)
+        canvas = Image.new("RGBA", self.canvas_size, (255, 255, 255, 0))
+        x = (canvas_width - resized.width) // 2
+        y = canvas_height - self.padding - resized.height
+        canvas.alpha_composite(resized, (x, y))
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        canvas.save(destination, format="PNG")
+        return destination
+
+    def _content_mask(self, image: Image.Image) -> Image.Image:
+        rgb = image.convert("RGB")
+        red, green, blue = rgb.split()
+        # Per-pixel distance from pure white is 255 - min(channel) = max(255-r, 255-g, 255-b).
+        distance = ImageChops.lighter(
+            ImageChops.lighter(ImageChops.invert(red), ImageChops.invert(green)),
+            ImageChops.invert(blue),
+        )
+        return distance.point(lambda value: 255 if value > self.tolerance else 0)
+
     def _foreground_mask(self, image: Image.Image) -> Image.Image:
         width, height = image.size
         raw = image.tobytes()

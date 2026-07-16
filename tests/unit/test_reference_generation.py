@@ -99,7 +99,7 @@ def test_reference_script_service_requests_romanian_beat_schema() -> None:
     assert result.beats[0].id == "hook"
     assert result.beats[1].id == "b0"
     assert result.beats[-1].text.startswith("Pe scurt,")
-    assert result.beats[-1].pause_after_ms == 1000
+    assert result.beats[-1].pause_after_ms == 750
     assert llm.calls[0][2] is ReferenceScriptPackage
     assert llm.calls[0][3]["schema_name"] == "reference_script"
     assert "același număr de caracteristici" in llm.calls[0][1]
@@ -140,7 +140,7 @@ def test_reference_script_service_enforces_intro_and_signed_outro() -> None:
 
     assert result.beats[0].text == "We have Coffee and we have Tea. But what's the difference?"
     assert result.beats[-1].text == "In short, Choose the drink that suits the moment."
-    assert result.beats[-1].pause_after_ms == 1000
+    assert result.beats[-1].pause_after_ms == 750
     assert result.closing.text == "Hugs from Pufăilă!"
     assert result.closing.pause_after_ms == 500
 
@@ -430,6 +430,49 @@ def test_direction_alignment_balances_inflected_two_sided_beats() -> None:
         MascotPose.POINT_UP_RIGHT,
     ]
     assert [cue.product_focus for cue in aligned.cues] == [Focus.LEFT, Focus.RIGHT]
+
+
+def test_direction_validator_drops_wrong_focus_on_continuation_beats() -> None:
+    script = ReferenceScriptPackage(
+        title="Brânză de burduf vs Brânză telemea",
+        left_item="Brânză de burduf",
+        right_item="Brânză telemea",
+        hook="Avem Brânză de burduf și avem Brânză telemea. Dar care e diferența?",
+        beats=[
+            NarrationBeat(
+                id="hook",
+                text="Avem Brânză de burduf și avem Brânză telemea. Dar care e diferența?",
+            ),
+            NarrationBeat(id="left_intro", text="Brânza de burduf se maturează în coajă de brad."),
+            NarrationBeat(id="left_taste", text="Gust puternic, picant, se simte imediat."),
+        ],
+        closing=ClosingBeat(id="closing", text="Vă pupă Pufăilă!", pause_after_ms=500),
+        caption="Burduf sau telemea?",
+    )
+    plan = DirectionPlan(cues=[
+        DirectionCue(
+            beat_id="left_intro",
+            word_index=0,
+            mascot_pose=MascotPose.POINT_UP_LEFT,
+            product_focus=Focus.LEFT,
+        ),
+        # The model wrongly points RIGHT while the beat still describes the left cheese.
+        DirectionCue(
+            beat_id="left_taste",
+            word_index=0,
+            mascot_pose=MascotPose.POINT_UP_RIGHT,
+            product_focus=Focus.RIGHT,
+        ),
+    ])
+
+    aligned = ReferenceDirectionValidator().align_with_script(plan, script)
+
+    # The wrong right-pointing cue on the continuation beat (which names neither product) is
+    # dropped, so the frame keeps the previous left focus instead of flipping to the wrong item.
+    assert all(cue.beat_id != "left_taste" for cue in aligned.cues)
+    left_cues = [cue for cue in aligned.cues if cue.beat_id == "left_intro"]
+    assert left_cues and left_cues[0].product_focus == Focus.LEFT
+    assert left_cues[0].mascot_pose == MascotPose.POINT_UP_LEFT
 
 
 def test_pair_repair_regenerates_only_selected_side_once(tmp_path: Path) -> None:

@@ -398,5 +398,53 @@
     "angle": "Comparăm suportul lombar reglabil, materialul respirant, brațele 4D și mecanismul de basculare al unui scaun ergonomic de gamă medie (preț 800–1500 lei) cu un scaun clasic fix, tapitat piele sintetică, fără reglări (preț 200–400 lei). Măsurăm presiunea pe discurile intervertebrale, circulația sângelui în picioare și oboseala musculară după o zi de lucru. Includem costul pe an de utilizare și riscul de hernie discale pe 5 ani.",
     "job_id": "",
     "added_at": "2026-07-12T18:30:07.935689+00:00"
+  },
+  {
+    "title": "Căști deschise vs Căști închise – Care îți protejează auzul?",
+    "left": "Căști deschise",
+    "right": "Căști închise",
+    "angle": "Căștile deschise lăsă sunetul să iasă natural, dar auzi și zgomotul din jur; cele închise îți izolează complet, dar pot crea presiune pe urechi la volumuri mari. Diferența e în siguranța auzului pe termen lung.",
+    "job_id": "",
+    "added_at": "2026-07-12T19:28:10.716525+00:00"
+  },
+  {
+    "title": "Pâine la cuptor vs Pâine la tava",
+    "left": "Pâine la cuptor",
+    "right": "Pâine la tava",
+    "angle": "Pâinea la cuptor (precum bagheta sau ciabata) se coace în abur la temperatură ridicată, formând o coajă crocantă și un interior poros. Pâinea la tava (precum piadina, lavash sau pita) se gâtește rapid pe o suprafață fierbinte fără abur, rămânând plată, moale și flexibilă. Diferența fundamentală e metoda de transfer căldură: convecție cu abur vs. conducție directă.",
+    "job_id": "",
+    "added_at": "2026-07-12T20:45:53.881015+00:00"
+  },
+  {
+    "title": "Pâine la tavă vs Pâine pe piatră",
+    "left": "Pâine la tavă",
+    "right": "Pâine pe piatră",
+    "angle": "Pâinea la tavă se coace într-o formă metalică, deci coaja e moale, uniformă și albăstruie, iar miezul rămâne compact. Pâinea pe piatră intră direct pe o suprafață fierbinte (piatră sau placa de șamot), unde aburul brusc și căldura radiantă creează o coajă groasă, crocantă, bine colorată și miezul cu alveolare mari și aerisit. Diferența e tehnica de coacere, nu rețeta.",
+    "job_id": "",
+    "added_at": "2026-07-13T07:54:19.476764+00:00"
+  },
+  {
+    "title": "Brânză de burduf vs Brânză telemea",
+    "left": "Brânză de burduf",
+    "right": "Brânză telemea",
+    "angle": "Brânza de burduf se maturează în piele de oaie sau burduf de lemn, de unde primește aromă puternică, textură friabilă și culoare galbenă intensă. Telemea e o brânză sărată moale, maturată în salmură, cu pastă albă și gust curat, sărat. Diferența e în procesul de maturare și ingrediente: burduful adaugă enzime și bacterii care transformă brânza radical.",
+    "job_id": "",
+    "added_at": "2026-07-13T08:05:05.755170+00:00"
+  },
+  {
+    "title": "Hârtie igienică reciclată vs Hârtie igienică din celuloză virginală",
+    "left": "Hârtie igienică reciclată",
+    "right": "Hârtie igienică din celuloză virginală",
+    "angle": "Hârtia reciclată e făcută din hârtie veche deșeuri (ziar, cutii, documente), deci fibrele i-au fost scurtate de reciclare și e mai rugină, mai gri și mai puțin absorbantă. Hârtia din celuloză virginală folosește fibre lungi, proaspete de copac, deci e mai moale, mai albă și se desface mai repede în apă. Diferența contează la confort, dar și la conductele: celuloза virginală presă păduri, reciclata reduce deșeurile.",
+    "job_id": "",
+    "added_at": "2026-07-13T08:32:03.918513+00:00"
+  },
+  {
+    "title": "Ouă de găină vs Ouă de prepeliță",
+    "left": "Ouă de găină",
+    "right": "Ouă de prepeliță",
+    "angle": "Ouăle de prepeliță sunt de 4-5 ori mai mici, au coaja pețoasă și conțin proporțional mai mult gălbenuș față de albuș. Nutrițional, au mai mult fier, vitamina B12 și acid folic pe 100 g, dar și mai mult colesterol. În bucătărie se coc în jumătate de timp și sunt ideale pentru aperitive sau garnituri mici.",
+    "job_id": "",
+    "added_at": "2026-07-13T08:37:42.240889+00:00"
   }
 ]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.domain.enums import SfxKind
+from app.domain.enums import Focus, MascotAnchor, MascotPose, SfxKind
 from app.domain.models import (
     AbsoluteDirectionCue,
     CaptionCue,
@@ -94,11 +94,28 @@ class TimelineCompiler:
                 sfx_kind=cue.sfx_kind,
             ))
         absolute_cues.sort(key=lambda cue: cue.start)
-        sound_cues = self._sound_cues(absolute_cues)
         closing_start = next(
             (beat.start for beat in transcript.beats if beat.id == "closing"),
             transcript.duration_seconds,
         )
+        pre_outro_beat = next(
+            (
+                beat
+                for beat in reversed(transcript.beats)
+                if beat.id != "closing" and beat.end <= closing_start
+            ),
+            None,
+        )
+        if pre_outro_beat is not None and pre_outro_beat.end < closing_start:
+            absolute_cues.append(AbsoluteDirectionCue(
+                start=pre_outro_beat.end,
+                mascot_pose=MascotPose.NEUTRAL,
+                mascot_anchor=MascotAnchor.CENTER,
+                product_focus=Focus.NEUTRAL,
+                sfx_kind=SfxKind.NONE,
+            ))
+            absolute_cues.sort(key=lambda cue: cue.start)
+        sound_cues = self._sound_cues(absolute_cues)
         sound_cues.append(SoundEffectCue(
             start=closing_start,
             kind=SfxKind.CTA_STING,

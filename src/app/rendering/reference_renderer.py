@@ -350,24 +350,12 @@ class ReferenceRenderer:
             bubble, anchor_y = self._build_speech_bubble(spec.cta_text)
             self._bubble_cache[spec.cta_text] = (bubble, anchor_y)
 
-        mascot_x, _ = self.mascot_pivot_at(spec, time_seconds)
-        head_top = self._mascot_head_top(spec, time_seconds)
-        card_anchor = (int(mascot_x), int(head_top + 12))
-
-        paste_x = card_anchor[0] - bubble.width // 2
-        paste_y = card_anchor[1] - anchor_y
         margin = 24
+        paste_x = self.template.canvas_width // 2 - bubble.width // 2
+        paste_y = self.template.canvas_height // 2 - bubble.height // 2
         paste_x = max(margin, min(paste_x, self.template.canvas_width - bubble.width - margin))
-        paste_y = max(margin, paste_y)
+        paste_y = max(margin, min(paste_y, self.template.canvas_height - bubble.height - margin))
         canvas.alpha_composite(bubble, (paste_x, paste_y))
-
-    def _mascot_head_top(self, spec: CompiledVideoSpec, time_seconds: float) -> float:
-        current = self._mascot_state(spec, time_seconds)
-        configured = self._calibration.poses[current.mascot_pose.value]
-        source = self._calibration_service._pose_image(current.mascot_pose.value)
-        height = self._calibration.base_render_height * configured.scale
-        pivot_y = self._calibration.source_pivot.y * height / source.height
-        return configured.y - pivot_y
 
     def _build_speech_bubble(self, text: str) -> tuple[Image.Image, int]:
         display_text = self._cta_display_text(text)

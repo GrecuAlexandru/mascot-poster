@@ -5,6 +5,7 @@ from app.config import (
     get_direction_llm_provider,
     get_image_provider,
     get_llm_provider,
+    get_proofread_llm_provider,
     get_script_llm_provider,
     get_search_provider,
     get_topic_history_service,
@@ -26,6 +27,7 @@ from app.services.reference_direction_service import ReferenceDirectionService
 from app.services.reference_image_service import ReferenceImageService
 from app.services.reference_image_brief_service import ReferenceImageBriefService
 from app.services.reference_image_validator import ReferenceImageValidator
+from app.services.reference_proofreader import ReferenceProofreader
 from app.services.reference_quality_service import ReferenceQualityService
 from app.services.reference_render_service import ReferenceRenderService
 from app.services.reference_script_service import ReferenceScriptService
@@ -60,6 +62,9 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
     if vision_llm is None:
         raise RuntimeError("Search-image validation configuration is incomplete")
 
+    proofread_llm = get_proofread_llm_provider()
+    proofreader = ReferenceProofreader(proofread_llm) if proofread_llm is not None else None
+
     audio_service = AudioService(
         settings.ffmpeg_bin,
         settings.ffprobe_bin,
@@ -76,9 +81,11 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
     )
     return VideoGenerationService(
         output_base=settings.project_root / "output" / "jobs",
-        topic_generator=ReferenceTopicGenerator(topic_llm, get_topic_history_service()),
+        topic_generator=ReferenceTopicGenerator(
+            topic_llm, get_topic_history_service(), proofreader
+        ),
         researcher=ReferenceResearcher(search, research_llm),
-        script_writer=ReferenceScriptService(script_llm),
+        script_writer=ReferenceScriptService(script_llm, proofreader),
         verifier=ReferenceVerifier(FactCheckService(research_llm)),
         director=ReferenceDirectionService(direction_llm),
         beat_tts=BeatTTSService(tts, audio_service),

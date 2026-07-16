@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         default="deepseek/deepseek-v4-flash",
         alias="DIRECTION_LLM_MODEL",
     )
+    proofread_llm_model: str = Field(
+        default="",
+        alias="PROOFREAD_LLM_MODEL",
+    )
     vision_llm_model: str = Field(
         default="openai/gpt-4o-mini",
         alias="OPENROUTER_VISION_MODEL",
@@ -179,6 +183,23 @@ def get_script_llm_provider() -> Optional[object]:
 def get_direction_llm_provider() -> Optional[object]:
     settings = get_settings()
     return _build_text_llm_provider(settings, settings.direction_llm_model)
+
+
+def get_proofread_llm_provider() -> Optional[object]:
+    settings = get_settings()
+    # A dedicated proofread model always goes through OpenRouter so it can differ from the
+    # (possibly NIM-routed) generation model and be a stronger Romanian corrector. Without an
+    # explicit model, fall back to the normal text provider so proofreading still runs.
+    if settings.proofread_llm_model and settings.llm_api_key:
+        from app.providers.llm.openai_provider import LLMProvider
+
+        return LLMProvider(
+            api_key=settings.llm_api_key,
+            model=settings.proofread_llm_model,
+            fallback_models=[settings.llm_fallback_model],
+            base_url=settings.llm_base_url,
+        )
+    return _build_text_llm_provider(settings, settings.script_llm_model)
 
 
 def _build_text_llm_provider(settings: Settings, openrouter_model: str) -> Optional[object]:

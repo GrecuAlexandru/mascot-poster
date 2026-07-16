@@ -14,6 +14,51 @@ from app.services.reference_image_brief_service import (
 )
 
 
+_VALIDATE_ITEM_SYSTEM = (
+    "You are a strict product-image quality inspector for a comparison-video channel. You reject "
+    "ambiguity: if you cannot clearly confirm the exact object and its distinguishing attributes, "
+    "you fail the image. You judge only what a still photograph can actually prove, and you return "
+    "structured JSON only."
+)
+
+_VALIDATE_PAIR_SYSTEM = (
+    "You are a strict paired product-image quality inspector for a comparison-video channel. You "
+    "confirm that the two images show the two requested items, that they are clearly distinct, and "
+    "that they match as a photographic pair. You judge only what still photographs can prove, and "
+    "you return structured JSON only."
+)
+
+_VALIDATE_ITEM_GUIDE = (
+    "DECISION CHECKLIST (set every boolean, then list the reasons): depicts_requested_item - is "
+    "this unmistakably the exact_subject from the brief? distinguishing_attributes_present - are "
+    "the brief's visible attributes actually shown? contains_logo_or_prominent_text and "
+    "contains_prohibited_content - per the content rules above. background_acceptable - clean white "
+    "with no scenery, colour cast, or dark or busy backdrop? realism_acceptable - believable "
+    "photography (true) rather than a cartoon, illustration, or physically impossible render "
+    "(false)? composition_acceptable - upright, centered, full object, sensible scale? confidence - "
+    "your certainty from zero to one; below 0.8 the app treats the image as failing, so go high only "
+    "when you are sure. Put wrong identity, missing defining attributes, unwanted text or logos, "
+    "prohibited content, an unusable background, or clearly fake imagery in fatal_reasons; put "
+    "softer issues such as slight scale, crop, or lighting in warning_reasons; and when something is "
+    "wrong set repair_side and give short imperative repair_instructions. "
+    "ACCEPT, for example: a clean studio photo of the exact object on white, even with polished "
+    "lighting and crisp reflections; a required source cue such as whole peanuts beside the jar is "
+    "visible. REJECT, for example: the object is actually a lookalike (almond butter when peanut "
+    "butter was requested); a brand logo is stamped on it; the background is a wooden table; it is a "
+    "flat cartoon drawing; the subject is tilted; or it is a close-up of one part instead of the "
+    "whole object. "
+)
+
+_VALIDATE_PAIR_GUIDE = (
+    "Worked calls to guide your judgment. ACCEPT, for example: two matched studio photos where a "
+    "butter block on the left and a margarine tub on the right share the angle, scale, crop, and "
+    "white background, even though their colours differ. REJECT, for example: one image is a "
+    "component close-up while the other is a whole object; the two sit at clearly different heights "
+    "or apparent scales; one has a dark or scenic background; or either is a stylized illustration "
+    "rather than a believable photograph. "
+)
+
+
 class ImageValidationResult(BaseModel):
     depicts_requested_item: bool
     distinguishing_attributes_present: bool
@@ -115,7 +160,7 @@ class ReferenceImageValidator:
                     "Do not mark ordinary interface text or an incidental in-screen brand mark as prominent text. "
                 )
             result = await self.llm.complete_structured_with_images(
-                "You are a strict product-image quality inspector. Reject ambiguity.",
+                _VALIDATE_ITEM_SYSTEM,
                 (
                     "Inspect this candidate against the structured brief. Confirm the exact object and "
                     "its distinguishing visual attributes. This inspection image is composited over a "
@@ -132,7 +177,8 @@ class ReferenceImageValidator:
                     "a photorealistic AI-generated or studio product image is acceptable when it remains believable. "
                     "Set realism_acceptable to false only for a clearly stylized illustration, cartoon, "
                     "or physically implausible appearance. "
-                    f"{content_rejection}{interface_guidance}Brief: {validation_brief.model_dump_json()}"
+                    + _VALIDATE_ITEM_GUIDE
+                    + f"{content_rejection}{interface_guidance}Brief: {validation_brief.model_dump_json()}"
                 ),
                 [inspection_path],
                 ImageValidationResult,
@@ -175,7 +221,7 @@ class ReferenceImageValidator:
                     "Do not mark ordinary interface text or incidental in-screen brand marks as prominent text. "
                 )
             result = await self.llm.complete_structured_with_images(
-                "You are a strict paired product-image quality inspector.",
+                _VALIDATE_PAIR_SYSTEM,
                 (
                     "The first image is left and the second is right. Confirm both exact identities, "
                     "clear visual distinction, matching angle, scale, crop, lighting and background. "
@@ -203,8 +249,10 @@ class ReferenceImageValidator:
                     "short imperative repair_instructions that an image generator can follow. Never reject, repair, "
                     "or warn merely because the two compared products have different colors unless the paired brief "
                     "explicitly requires matching colors. Different product colors are normal and can help communicate "
-                    f"the comparison. Paired brief: {validation_brief.model_dump_json()}"
-                    f"{interface_guidance}{content_rejection}"
+                    "the comparison. "
+                    + _VALIDATE_PAIR_GUIDE
+                    + f"Paired brief: {validation_brief.model_dump_json()}"
+                    + f"{interface_guidance}{content_rejection}"
                 ),
                 inspection_paths,
                 ImageValidationResult,

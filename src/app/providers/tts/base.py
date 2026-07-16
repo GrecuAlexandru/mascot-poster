@@ -5,6 +5,8 @@ from typing import Literal, Optional, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.domain.models import TimedWord
+
 
 class TTSSettings(BaseModel):
     stability: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -22,16 +24,10 @@ class TTSResult(BaseModel):
     model: str
     character_count: int
     estimated_cost_usd: float
-    timed_words: Optional[list["TimedWord"]] = None
+    timed_words: Optional[list[TimedWord]] = None
     cached: bool = False
 
     model_config = {"arbitrary_types_allowed": True}
-
-
-class TimedWord(BaseModel):
-    word: str
-    start: float
-    end: float
 
 
 class TimedPhrase(BaseModel):
