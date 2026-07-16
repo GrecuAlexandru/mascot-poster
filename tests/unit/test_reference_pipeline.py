@@ -36,6 +36,7 @@ from app.config import Settings
 from app.services.timeline_compiler import TimelineCompiler
 from app.services.reference_quality_service import ReferenceQualityService
 from app.services.reference_image_validator import ReferenceImageValidator
+from app.services.social_description_service import SocialDescriptionService
 from app.services.video_generation_service import _CheckpointStore
 import app.services.reference_generation_factory as reference_factory
 
@@ -384,6 +385,7 @@ def test_production_pipeline_uses_vision_only_for_search_image_validation(monkey
     monkeypatch.setattr(reference_factory, "get_tts_provider", lambda: provider)
     monkeypatch.setattr(reference_factory, "get_image_provider", lambda: provider)
     monkeypatch.setattr(reference_factory, "get_topic_history_service", lambda: provider)
+    monkeypatch.setattr(reference_factory, "get_description_history_service", lambda: provider)
 
     monkeypatch.setattr(
         reference_factory,
@@ -398,6 +400,9 @@ def test_production_pipeline_uses_vision_only_for_search_image_validation(monkey
     assert service.image_service.validator.llm is provider
     assert service.image_service.max_candidates == 3
     assert service.image_validator is None
+    assert isinstance(service.social_description_writer, SocialDescriptionService)
+    assert service.social_description_writer.llm is provider
+    assert service.description_history is provider
 
 
 def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None:

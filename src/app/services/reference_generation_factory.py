@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.config import (
     Settings,
     get_direction_llm_provider,
+    get_description_history_service,
     get_image_provider,
     get_llm_provider,
     get_proofread_llm_provider,
@@ -32,6 +33,7 @@ from app.services.reference_quality_service import ReferenceQualityService
 from app.services.reference_render_service import ReferenceRenderService
 from app.services.reference_script_service import ReferenceScriptService
 from app.services.sfx_service import SfxLibraryService
+from app.services.social_description_service import SocialDescriptionService
 from app.services.timeline_compiler import TimelineCompiler
 from app.services.video_generation_service import VideoGenerationService
 from app.services.quality_service import QualityService
@@ -104,4 +106,6 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
         ),
         image_brief_service=ReferenceImageBriefService(direction_llm),
         image_validator=None,
+        social_description_writer=SocialDescriptionService(script_llm),
+        description_history=get_description_history_service(),
     )

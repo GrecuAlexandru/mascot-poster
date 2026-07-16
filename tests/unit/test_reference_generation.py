@@ -19,6 +19,7 @@ from app.domain.models import (
     ResearchPackage,
     GenerationRequest,
     RenderResult,
+    SocialDescription,
     TimedBeat,
     TimedTranscript,
     TimedWord,
@@ -820,9 +821,35 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
         def validate(self, spec, result):
             return []
 
+    class DescriptionWriter:
+        def __init__(self) -> None:
+            self.scripts = []
+
+        async def generate(self, topic, research, script, language, recent_descriptions):
+            self.scripts.append(script)
+            return SocialDescription(
+                description=(
+                    "Cafea vs Ceai ☕ Cafeaua pornește repede, iar ceaiul îți lasă un ritm "
+                    "mai liniștit pentru aceeași pauză. Tu ce băutură alegi când începe ziua? 🐹"
+                ),
+                hashtags=["bauturi", "cafea", "ceai"],
+            )
+
+    class DescriptionHistory:
+        def __init__(self) -> None:
+            self.added = []
+
+        def recent(self, limit=10):
+            return ["Unt vs margarină 🧈 Tu ce alegi?"]
+
+        def add(self, topic, description):
+            self.added.append((topic, description))
+
     topic = TopicGenerator()
     renderer = Renderer()
     tts = TTS()
+    description_writer = DescriptionWriter()
+    description_history = DescriptionHistory()
     service = VideoGenerationService(
         output_base=tmp_path / "jobs",
         topic_generator=topic,
@@ -837,6 +864,8 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
         timeline_compiler=TimelineCompiler(),
         renderer=renderer,
         quality_service=Quality(),
+        social_description_writer=description_writer,
+        description_history=description_history,
     )
     stages = []
 
@@ -848,6 +877,16 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
     assert second.render_result.video_path == first.render_result.video_path
     assert topic.calls == 1
     assert renderer.calls == 1
+    assert len(description_writer.scripts) == 1
+    assert description_writer.scripts[0].caption == "Cafea sau ceai?"
+    assert len(description_history.added) == 1
+    social_payload = json.loads(
+        (tmp_path / "jobs" / "job-1" / "_pipeline" / "social_description.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert social_payload["publishable_text"].startswith("Cafea vs Ceai ☕")
+    assert "social_description" in state["completed"]
     assert tts.settings.speed == pytest.approx(1.05)
     assert "quality" in state["completed"]
     assert stages[0] == "preflight"
@@ -970,11 +1009,24 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
         def validate(self, spec, result):
             return []
 
+    class DescriptionWriter:
+        def __init__(self) -> None:
+            self.hooks = []
+
+        async def generate(self, topic, research, script, language, recent_descriptions):
+            self.hooks.append(script.hook)
+            return SocialDescription(
+                description=script.caption,
+                hashtags=[],
+                fallback_used=True,
+            )
+
     script_writer = ScriptWriter()
     director = Director()
     tts = TTS()
     renderer = Renderer()
     audio = Audio()
+    description_writer = DescriptionWriter()
     service = VideoGenerationService(
         output_base=tmp_path / "jobs",
         topic_generator=TopicGenerator(),
@@ -989,6 +1041,7 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
         timeline_compiler=TimelineCompiler(),
         renderer=renderer,
         quality_service=Quality(),
+        social_description_writer=description_writer,
     )
 
     result = asyncio.run(service.generate(GenerationRequest(target_duration_seconds=25)))
@@ -996,6 +1049,7 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
     assert result.render_result.duration_seconds == 24.0
     assert tts.calls == 2
     assert director.hooks == ["short"]
+    assert description_writer.hooks == ["short"]
     assert renderer.durations == [24.0]
     assert audio.mixed_durations == [24.0]
     assert "Measured narration duration was 61.0s" in script_writer.repair_notes[1][0]

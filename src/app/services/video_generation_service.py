@@ -18,6 +18,7 @@ from app.domain.models import (
     ReferenceScriptPackage,
     RenderResult,
     ResearchPackage,
+    SocialDescription,
     TimedTranscript,
     TopicSpec,
     VerificationResult,
@@ -124,6 +125,8 @@ class VideoGenerationService:
         quality_service: object,
         image_brief_service: object | None = None,
         image_validator: object | None = None,
+        social_description_writer: object | None = None,
+        description_history: object | None = None,
     ):
         self.output_base = output_base
         self.topic_generator = topic_generator
@@ -140,6 +143,8 @@ class VideoGenerationService:
         self.quality_service = quality_service
         self.image_brief_service = image_brief_service
         self.image_validator = image_validator
+        self.social_description_writer = social_description_writer
+        self.description_history = description_history
 
     async def generate(
         self,
@@ -340,6 +345,41 @@ class VideoGenerationService:
                     "transcript": transcript,
                     "narration_audio": narration_audio,
                 })
+
+            stage = "social_description"
+            await self._announce(progress_callback, stage)
+            if checkpoint.completed(stage):
+                payload = checkpoint.load(stage)
+                social_description = SocialDescription.model_validate(payload["description"])
+            else:
+                if self.social_description_writer is None:
+                    social_description = SocialDescription(
+                        description=script.caption,
+                        hashtags=script.hashtags,
+                        fallback_used=True,
+                    )
+                else:
+                    recent_descriptions = (
+                        self.description_history.recent(10)
+                        if self.description_history is not None
+                        else []
+                    )
+                    social_description = await self.social_description_writer.generate(
+                        topic,
+                        research,
+                        script,
+                        request.language,
+                        recent_descriptions,
+                    )
+                checkpoint.save(
+                    stage,
+                    {
+                        "description": social_description,
+                        "publishable_text": social_description.publishable_text,
+                    },
+                )
+                if self.description_history is not None:
+                    self.description_history.add(topic.title, social_description.description)
 
             stage = "compiled"
             await self._announce(progress_callback, stage)

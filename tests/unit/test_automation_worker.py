@@ -143,6 +143,7 @@ def test_regeneration_kind_invalidates_only_required_checkpoints(
         "research_assets",
         "script_verification",
         "direction_tts",
+        "social_description",
         "compiled",
         "render",
         "quality",
@@ -166,4 +167,36 @@ def test_regeneration_kind_invalidates_only_required_checkpoints(
     assert (pipeline / "topic.json").exists()
     assert (pipeline / "research_assets.json").exists()
     assert not (pipeline / "direction_tts.json").exists()
+    assert not (pipeline / "social_description.json").exists()
     assert not (pipeline / "compiled.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("kind", "description_survives"),
+    [
+        (RegenerationKind.IMAGES, True),
+        (RegenerationKind.SCRIPT, False),
+        (RegenerationKind.FULL, False),
+    ],
+)
+def test_social_description_checkpoint_follows_regeneration_scope(
+    tmp_path: Path,
+    kind: RegenerationKind,
+    description_survives: bool,
+) -> None:
+    from app.automation.checkpoints import invalidate_checkpoints
+
+    job_id = "job-1"
+    pipeline = tmp_path / job_id / "_pipeline"
+    pipeline.mkdir(parents=True)
+    stages = ["topic", "research_assets", "script_verification", "social_description"]
+    for stage in stages:
+        (pipeline / f"{stage}.json").write_text("{}", encoding="utf-8")
+    (pipeline / "state.json").write_text(
+        json.dumps({"completed": stages, "failed_stage": None, "error": None}),
+        encoding="utf-8",
+    )
+
+    invalidate_checkpoints(tmp_path, job_id, kind)
+
+    assert (pipeline / "social_description.json").exists() is description_survives

@@ -10,6 +10,7 @@ INVALIDATED_STAGES = {
     RegenerationKind.SCRIPT: {
         "script_verification",
         "direction_tts",
+        "social_description",
         "compiled",
         "render",
         "quality",
@@ -24,6 +25,7 @@ INVALIDATED_STAGES = {
         "research_assets",
         "script_verification",
         "direction_tts",
+        "social_description",
         "compiled",
         "render",
         "quality",
