@@ -87,6 +87,14 @@ def test_social_description_validates_length_and_question() -> None:
         )
 
 
+def test_social_description_allows_any_decorative_emoji_after_final_question() -> None:
+    description = VALID_DESCRIPTION.removesuffix("🐹") + "🐷"
+
+    result = SocialDescription(description=description, hashtags=["bucatarie"])
+
+    assert result.description.endswith("? 🐷")
+
+
 def test_social_description_normalizes_and_formats_hashtags() -> None:
     result = SocialDescription(
         description=VALID_DESCRIPTION,

@@ -152,8 +152,11 @@ class SocialDescription(BaseModel):
             word_count = len(self.description.split())
             if not 25 <= word_count <= 45:
                 raise ValueError("description must contain 25-45 words")
-            final_sentence = self.description.rstrip(" 🐹👴🏻🍑❄️🌿⚡🌲💎🦴")
-            if not final_sentence.endswith("?"):
+            question_index = self.description.rfind("?")
+            trailing_decoration = self.description[question_index + 1 :]
+            if question_index < 0 or any(
+                character.isalnum() for character in trailing_decoration
+            ):
                 raise ValueError("description must end with a question")
         return self
 
