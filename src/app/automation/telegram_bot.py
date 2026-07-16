@@ -71,9 +71,9 @@ class TelegramApprovalBot:
         if not separator or not token:
             await self.client.answer_callback(callback_id, "Comandă invalidă.")
             return
+        confirmation: str | None = None
         try:
             job = self.job_service.get_by_action_token(token)
-            confirmation: str | None = None
             if action == "approve":
                 result = self.job_service.approve(
                     job.id,

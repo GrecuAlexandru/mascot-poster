@@ -109,6 +109,27 @@ def test_unauthorized_callback_cannot_change_state(tmp_path: Path):
     assert client.callback_answers == [("callback-1", "Neautorizat.")]
 
 
+def test_expired_callback_reports_expiry_without_chat_confirmation(tmp_path: Path):
+    service = build_service(tmp_path)
+    client = FakeTelegramClient()
+    bot = TelegramApprovalBot(service, client, allowed_user_id=7, review_chat_id=8)
+    update = {
+        "callback_query": {
+            "id": "callback-expired",
+            "from": {"id": 7},
+            "message": {"chat": {"id": 8}},
+            "data": "approve:expired-token",
+        }
+    }
+
+    asyncio.run(bot.handle_update(update))
+
+    assert client.callback_answers == [
+        ("callback-expired", "Acțiunea a expirat sau jobul s-a schimbat.")
+    ]
+    assert client.messages == []
+
+
 def test_regenerate_script_callback_invalidates_approval_and_requeues(tmp_path: Path):
     service = build_service(tmp_path)
     job = ready_job(service, tmp_path)
