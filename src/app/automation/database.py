@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Iterator, Optional
 
-from sqlalchemy import DateTime, Integer, String, Text, create_engine
+from sqlalchemy import DateTime, Integer, String, Text, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -58,6 +58,14 @@ class AutomationDatabase:
         self.session_factory = sessionmaker(self.engine, expire_on_commit=False)
 
     def create_schema(self) -> None:
+        if self.engine.dialect.name == "postgresql":
+            with self.engine.begin() as connection:
+                connection.execute(
+                    text("SELECT pg_advisory_xact_lock(:lock_id)"),
+                    {"lock_id": 0x4D4153434F54},
+                )
+                Base.metadata.create_all(connection)
+            return
         Base.metadata.create_all(self.engine)
 
     @contextmanager
