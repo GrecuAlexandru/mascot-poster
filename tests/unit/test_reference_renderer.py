@@ -207,6 +207,29 @@ def test_reference_renderer_uses_a_tail_free_cta_card(tmp_path: Path) -> None:
     assert anchor_y == card.height
 
 
+def test_production_cta_shrinks_instead_of_wrapping(monkeypatch, tmp_path: Path) -> None:
+    renderer = _caption_renderer(tmp_path)
+
+    class WideFont:
+        def __init__(self, size: int):
+            self.size = size
+
+        def getbbox(self, text: str):
+            return (0, 0, round(len(text) * self.size * 0.75), self.size)
+
+    monkeypatch.setattr(
+        "app.rendering.reference_renderer.load_font",
+        lambda _path, size: WideFont(size),
+    )
+    text = renderer._cta_display_text("Like, share, follow")
+
+    font, lines = renderer._bubble_lines(text)
+
+    assert lines == ["LIKE · SHARE · FOLLOW"]
+    assert measure_text(lines[0], font)[0] <= 760
+    assert font.size < 60
+
+
 def test_reference_renderer_uses_white_canvas_and_local_product_focus(tmp_path: Path) -> None:
     mascot_dir = tmp_path / "mascot"
     _make_mascot_assets(mascot_dir)

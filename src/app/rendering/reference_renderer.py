@@ -411,6 +411,8 @@ class ReferenceRenderer:
         return " · ".join(words)
 
     def _bubble_lines(self, text: str):
+        if "\n" not in text and text == self._cta_display_text("Like, share, follow"):
+            return self._single_line_cta_font(text), [text]
         # Honor explicit line breaks, then size the font so the widest paragraph fits.
         paragraphs = [part.strip() for part in text.split("\n") if part.strip()]
         for size in range(60, 33, -4):
@@ -430,6 +432,13 @@ class ReferenceRenderer:
         for paragraph in paragraphs:
             lines.extend(self._wrap_words(paragraph, font, 760))
         return font, lines
+
+    def _single_line_cta_font(self, text: str, max_width: int = 760):
+        for size in range(60, 11, -2):
+            font = load_font(self._cta_font_path, size)
+            if measure_text(text, font)[0] <= max_width:
+                return font
+        return load_font(self._cta_font_path, 12)
 
     @staticmethod
     def _wrap_words(text: str, font, max_width: int) -> list[str]:
