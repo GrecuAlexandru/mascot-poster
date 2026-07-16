@@ -289,3 +289,11 @@ def get_topic_history_service() -> "TopicHistoryService":
 
     settings = get_settings()
     return TopicHistoryService(settings.data_dir / "topic_history.json")
+
+
+@lru_cache(maxsize=1)
+def get_description_history_service() -> "DescriptionHistoryService":
+    from app.services.description_history import DescriptionHistoryService
+
+    settings = get_settings()
+    return DescriptionHistoryService(settings.data_dir / "description_history.json")
