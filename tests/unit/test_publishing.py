@@ -100,6 +100,7 @@ def test_future_approved_video_is_custom_scheduled_in_buffer(tmp_path: Path):
     assert buffer.creates[0]["mode"] == "customScheduled"
     assert buffer.creates[0]["due_at"] == target
     assert buffer.creates[0]["is_ai_generated"] is True
+    assert buffer.creates[0]["text"] == job.caption
 
 
 def test_publish_uses_renderer_thumbnail_offset_metadata(tmp_path: Path):

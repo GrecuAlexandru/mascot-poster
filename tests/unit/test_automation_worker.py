@@ -38,7 +38,7 @@ class FakeGenerator:
                     "script": {
                         "title": "Cafea vs ceai",
                         "caption": "Tu ce alegi?",
-                        "hashtags": ["#cafea", "#ceai"],
+                        "hashtags": ["cafea", "##ceai"],
                     }
                 }
             ),
@@ -75,12 +75,38 @@ def test_worker_runs_real_generation_contract_and_records_artifacts(
     assert result.id == queued.id
     assert result.state == JobState.WAITING_FOR_APPROVAL
     assert result.topic == "Cafea vs ceai"
-    assert result.caption == "Tu ce alegi?\n\n#cafea #ceai"
+    assert result.caption == "Tu ce alegi?\n\n#pufaila #stiaica #cafea #ceai"
     assert result.video_path and result.video_path.is_file()
     assert len(result.video_sha256 or "") == 64
     assert generator.requests[0].topic_override == "Cafea vs ceai"
     assert generator.requests[0].target_duration_seconds == 30
     assert generator.requests[0].voice_id == "voice-1"
+
+
+def test_worker_prefers_social_description_checkpoint_byte_for_byte(tmp_path: Path) -> None:
+    job_dir = tmp_path / "job"
+    pipeline = job_dir / "_pipeline"
+    pipeline.mkdir(parents=True)
+    video = job_dir / "video.mp4"
+    video.write_bytes(b"video")
+    expected = (
+        "Cafea vs ceai ☕ Una te pornește, cealaltă îți domolește ritmul. "
+        "Tu ce alegi dimineața? 🐹\n\n#pufaila #stiaica #cafea #ceai"
+    )
+    (pipeline / "topic.json").write_text('{"title":"Legacy topic"}', encoding="utf-8")
+    (pipeline / "script_verification.json").write_text(
+        '{"script":{"title":"Legacy","caption":"Legacy caption","hashtags":["legacy"]}}',
+        encoding="utf-8",
+    )
+    (pipeline / "social_description.json").write_text(
+        json.dumps({"publishable_text": expected}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    topic, caption = GenerationWorker._read_metadata(video, SimpleNamespace(topic_override=None))
+
+    assert topic == "Legacy"
+    assert caption == expected
 
 
 def test_worker_uses_language_default_when_job_has_no_voice(

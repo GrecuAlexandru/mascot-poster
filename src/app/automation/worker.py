@@ -9,7 +9,7 @@ from typing import Any
 from app.automation.checkpoints import invalidate_checkpoints
 from app.automation.job_service import JobService
 from app.automation.models import AutomationJob
-from app.domain.models import GenerationRequest
+from app.domain.models import GenerationRequest, SocialDescription
 from app.services.video_generation_service import format_exception_message
 
 
@@ -79,16 +79,24 @@ class GenerationWorker:
         script_payload = GenerationWorker._load_json(
             pipeline_dir / "script_verification.json"
         ).get("script", {})
+        social_payload = GenerationWorker._load_json(
+            pipeline_dir / "social_description.json"
+        )
         topic = str(
             script_payload.get("title")
             or topic_payload.get("title")
             or job.topic_override
             or "Untitled video"
         )
-        caption = str(script_payload.get("caption") or topic)
-        hashtags = [str(item) for item in script_payload.get("hashtags", []) if item]
-        if hashtags:
-            caption = f"{caption}\n\n{' '.join(hashtags)}"
+        final_caption = social_payload.get("publishable_text")
+        if isinstance(final_caption, str) and final_caption.strip():
+            caption = final_caption.strip()
+        else:
+            caption = SocialDescription(
+                description=str(script_payload.get("caption") or topic),
+                hashtags=[str(item) for item in script_payload.get("hashtags", []) if item],
+                fallback_used=True,
+            ).publishable_text
         return topic, caption
 
     @staticmethod

@@ -78,6 +78,7 @@ def test_bot_sends_each_ready_video_once_with_hash_bound_buttons(tmp_path: Path)
     assert sent["chat_id"] == 8
     assert sent["video_path"] == job.video_path
     assert (job.video_sha256 or "")[:12] in sent["caption"]
+    assert job.caption in sent["caption"]
     buttons = sent["reply_markup"]["inline_keyboard"]
     callback_data = [button["callback_data"] for row in buttons for button in row]
     assert f"approve:{job.action_token}" in callback_data
