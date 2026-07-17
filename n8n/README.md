@@ -37,13 +37,26 @@ Use the same token stored in the mascot stack's external secrets file. The expor
 
 ## Import and enable
 
-Import the four JSON files from `n8n/workflows`. Keep them inactive until a manual test succeeds.
+Import all six JSON files from `n8n/workflows`. Keep them inactive until a manual test succeeds.
 
-1. Run `Mascot - Create twice-daily generation jobs` manually and confirm a `QUEUED` job is returned.
-2. Let the worker finish and confirm the Telegram bot sends the MP4 with review buttons.
-3. Approve a test video and run `Mascot - Publish newly approved videos` manually.
-4. Confirm the post appears in Buffer, then run `Mascot - Reconcile Buffer delivery`.
-5. Activate the create, publish, and reconciliation workflows. The daily audit is optional.
+## Curated idea handoff
+
+Use the two manual workflows before enabling scheduled generation:
+
+1. Run `Mascot - Export idea history` and copy `copy_this_into_codex` from the final node.
+2. Paste that history alongside `src/app/prompts/weekly_content_ideas.md` into Codex.
+3. Copy the fenced JSON block from Codex's `n8n import` section.
+4. Open `Mascot - Import idea batch`, edit the `ideas_json` value in `Paste Codex JSON here`, and paste the block.
+5. Run the workflow and review `accepted_count`, `skipped_count`, and their details.
+
+The queue is durable in PostgreSQL. The twice-daily workflow consumes the oldest accepted idea exactly once. When no idea is queued, it returns `NO_IDEA_AVAILABLE` and creates no generation job.
+
+1. Import at least one harmless test idea through `Mascot - Import idea batch`.
+2. Run `Mascot - Create twice-daily generation jobs` manually and confirm a `CREATED` response containing a `QUEUED` job is returned.
+3. Let the worker finish and confirm the Telegram bot sends the MP4 with review buttons.
+4. Approve a test video and run `Mascot - Publish newly approved videos` manually.
+5. Confirm the post appears in Buffer, then run `Mascot - Reconcile Buffer delivery`.
+6. Activate the create, publish, and reconciliation workflows. The history export, batch import, and daily audit workflows remain manual.
 
 The create workflow runs at 07:30 and 15:30 in `Europe/Bucharest`, targeting 09:00 and 17:00. The publish workflow checks for approvals every two minutes. The reconciliation workflow checks Buffer every five minutes.
 

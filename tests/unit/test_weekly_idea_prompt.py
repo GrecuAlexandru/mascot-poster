@@ -18,6 +18,13 @@ def test_weekly_prompt_has_manual_inputs_scoring_and_csv() -> None:
         "factual_risk",
         "Second-pass critique",
         "```csv",
+        "```json",
+        '"ideas"',
+        '"idea_id"',
+        '"left"',
+        '"right"',
+        '"angle"',
+        "ideas_json",
         "Do not edit files",
     ):
         assert marker in text

@@ -72,3 +72,29 @@ def test_generation_schedule_and_target_slots_are_explicit():
     assert "hour: 17" in encoded
     assert "local < morning" in encoded
     assert "plus({ days: 1 })" in encoded
+    assert "use_next_idea" in encoded
+    assert "NO_IDEA_AVAILABLE" in encoded
+
+
+def test_n8n_has_manual_history_export_and_batch_import_workflows():
+    export = json.loads(
+        (ROOT / "n8n" / "workflows" / "export_idea_history.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    import_batch = json.loads(
+        (ROOT / "n8n" / "workflows" / "import_idea_batch.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    export_text = json.dumps(export)
+    import_text = json.dumps(import_batch)
+
+    assert "manualTrigger" in export_text
+    assert "/api/v1/automation/ideas/history" in export_text
+    assert "copy_this_into_codex" in export_text
+    assert "manualTrigger" in import_text
+    assert "ideas_json" in import_text
+    assert "/api/v1/automation/ideas/import" in import_text
+    assert "Mascot Internal API" in export_text
+    assert "Mascot Internal API" in import_text

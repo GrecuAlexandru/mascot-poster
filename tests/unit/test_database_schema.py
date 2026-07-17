@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from types import SimpleNamespace
 
-from app.automation.database import AutomationDatabase, Base
+from app.automation.database import AutomationDatabase, AutomationIdeaRow, AutomationJobRow, Base
 
 
 class RecordingConnection:
@@ -46,4 +46,11 @@ def test_postgres_schema_creation_is_serialized_with_an_advisory_lock(monkeypatc
     assert events[1][0] == "execute"
     assert "pg_advisory_xact_lock" in events[1][1]
     assert events[2] == ("create_all", engine.connection)
-    assert events[3] == ("commit",)
+    assert events[3][0] == "execute"
+    assert "ADD COLUMN IF NOT EXISTS idea_id" in events[3][1]
+    assert events[4] == ("commit",)
+
+
+def test_idea_queue_schema_has_unique_pairs_and_job_link() -> None:
+    assert AutomationIdeaRow.__table__.c.normalized_pair.unique is True
+    assert "idea_id" in AutomationJobRow.__table__.c

@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 
 from app.automation.database import AutomationDatabase
+from app.automation.idea_queue_service import IdeaQueueService
 from app.automation.job_service import JobService
 from app.automation.settings import get_automation_settings
-from app.config import get_settings
+from app.config import get_settings, get_topic_history_service
 from app.services.reference_generation_factory import build_reference_generation_service
 
 
@@ -14,6 +15,10 @@ def build_job_service() -> JobService:
     database = AutomationDatabase(settings.database_url)
     database.create_schema()
     return JobService(database)
+
+
+def build_idea_queue_service(job_service: JobService) -> IdeaQueueService:
+    return IdeaQueueService(job_service.database, get_topic_history_service())
 
 
 def build_publication_service(job_service: JobService):

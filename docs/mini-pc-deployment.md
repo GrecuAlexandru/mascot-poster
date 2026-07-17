@@ -118,6 +118,8 @@ The exact n8n container name may differ; use `docker compose ps` in the n8n proj
 
 Follow `n8n/README.md` to create the `Mascot Internal API` Header Auth credential, import the workflows, reconnect that credential in every HTTP node, and run the three manual acceptance steps. Imported workflows are intentionally inactive.
 
+Before the first generation test, run the manual history export, create a Codex batch with `weekly_content_ideas.md`, and import at least one idea through the manual batch-import workflow. The scheduled generator deliberately creates no job when this durable queue is empty.
+
 Activate these only after the manual test succeeds:
 
 - `Mascot - Create twice-daily generation jobs`

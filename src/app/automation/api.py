@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import hmac
 from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.automation.idea_queue_service import IdeaQueueService
 from app.automation.job_service import JobNotFound, JobService
-from app.automation.models import AutomationJob, JobState
+from app.automation.models import (
+    AutomationJob,
+    IdeaDraft,
+    IdeaHistoryExport,
+    IdeaImportResult,
+    JobState,
+)
 
 
 class CreateAutomationJob(BaseModel):
@@ -17,6 +25,7 @@ class CreateAutomationJob(BaseModel):
     language: str = Field(default="ro", pattern="^(ro|en)$")
     target_duration_seconds: int = Field(default=25, ge=20, le=60)
     voice_id: str | None = Field(default=None, max_length=200)
+    use_next_idea: bool = False
 
     @field_validator("target_at")
     @classmethod
@@ -27,14 +36,31 @@ class CreateAutomationJob(BaseModel):
             raise ValueError("target_at must be in the future")
         return value
 
+    @model_validator(mode="after")
+    def queue_and_override_are_exclusive(self):
+        if self.use_next_idea and self.topic_override:
+            raise ValueError("topic_override cannot be combined with use_next_idea")
+        return self
+
+
+class CreateAutomationJobResult(BaseModel):
+    status: Literal["CREATED", "NO_IDEA_AVAILABLE"]
+    job: AutomationJob | None
+
+
+class ImportIdeasRequest(BaseModel):
+    ideas: list[IdeaDraft] = Field(max_length=100)
+
 
 def create_automation_router(
     job_service: JobService,
     api_token: str,
     publisher=None,
+    idea_queue: IdeaQueueService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/automation", tags=["automation"])
     bearer = HTTPBearer(auto_error=False)
+    idea_queue = idea_queue or IdeaQueueService(job_service.database)
 
     def authorize(
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
@@ -49,18 +75,48 @@ def create_automation_router(
 
     @router.post(
         "/jobs",
-        response_model=AutomationJob,
-        status_code=status.HTTP_201_CREATED,
+        response_model=CreateAutomationJobResult,
         dependencies=[Depends(authorize)],
     )
-    def create_job(payload: CreateAutomationJob) -> AutomationJob:
-        return job_service.create_job(
-            target_at=payload.target_at,
-            topic_override=payload.topic_override,
-            language=payload.language,
-            target_duration_seconds=payload.target_duration_seconds,
-            voice_id=payload.voice_id,
-        )
+    def create_job(
+        payload: CreateAutomationJob,
+        response: Response,
+    ) -> CreateAutomationJobResult:
+        if payload.use_next_idea:
+            job = job_service.create_job_from_next_idea(
+                target_at=payload.target_at,
+                language=payload.language,
+                target_duration_seconds=payload.target_duration_seconds,
+                voice_id=payload.voice_id,
+            )
+        else:
+            job = job_service.create_job(
+                target_at=payload.target_at,
+                topic_override=payload.topic_override,
+                language=payload.language,
+                target_duration_seconds=payload.target_duration_seconds,
+                voice_id=payload.voice_id,
+            )
+        if job is None:
+            return CreateAutomationJobResult(status="NO_IDEA_AVAILABLE", job=None)
+        response.status_code = status.HTTP_201_CREATED
+        return CreateAutomationJobResult(status="CREATED", job=job)
+
+    @router.post(
+        "/ideas/import",
+        response_model=IdeaImportResult,
+        dependencies=[Depends(authorize)],
+    )
+    def import_ideas(payload: ImportIdeasRequest) -> IdeaImportResult:
+        return idea_queue.import_ideas(payload.ideas)
+
+    @router.get(
+        "/ideas/history",
+        response_model=IdeaHistoryExport,
+        dependencies=[Depends(authorize)],
+    )
+    def export_idea_history() -> IdeaHistoryExport:
+        return idea_queue.export_history()
 
     @router.get(
         "/jobs",

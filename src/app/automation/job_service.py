@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy import or_, select
 
-from app.automation.database import AutomationDatabase, AutomationJobRow
+from app.automation.database import AutomationDatabase, AutomationIdeaRow, AutomationJobRow
 from app.automation.models import AutomationJob, JobState, RegenerationKind
 
 
@@ -31,22 +31,50 @@ class JobService:
         target_duration_seconds: int = 25,
         voice_id: str | None = None,
     ) -> AutomationJob:
-        now = self._now()
-        row = AutomationJobRow(
-            id=str(uuid4()),
-            state=JobState.QUEUED.value,
-            created_at=now,
-            updated_at=now,
+        row = self._new_job_row(
             target_at=target_at,
             topic_override=topic_override,
             language=language,
             target_duration_seconds=target_duration_seconds,
             voice_id=voice_id,
-            action_token=self._token(),
         )
         with self.database.session() as session:
             session.add(row)
         return self._snapshot(row)
+
+    def create_job_from_next_idea(
+        self,
+        target_at: datetime,
+        language: str = "ro",
+        target_duration_seconds: int = 25,
+        voice_id: str | None = None,
+    ) -> AutomationJob | None:
+        with self.database.session() as session:
+            statement = (
+                select(AutomationIdeaRow)
+                .where(AutomationIdeaRow.state == "QUEUED")
+                .order_by(AutomationIdeaRow.created_at, AutomationIdeaRow.id)
+                .limit(1)
+            )
+            if session.bind and session.bind.dialect.name == "postgresql":
+                statement = statement.with_for_update(skip_locked=True)
+            idea = session.scalar(statement)
+            if idea is None:
+                return None
+            row = self._new_job_row(
+                target_at=target_at,
+                topic_override=f"{idea.left_item} vs {idea.right_item}",
+                language=language,
+                target_duration_seconds=target_duration_seconds,
+                voice_id=voice_id,
+                idea_id=idea.id,
+            )
+            idea.state = "CONSUMED"
+            idea.consumed_at = self._now()
+            idea.automation_job_id = row.id
+            session.add(row)
+            session.flush()
+            return self._snapshot(row)
 
     def get(self, job_id: str) -> AutomationJob:
         with self.database.session() as session:
@@ -520,3 +548,28 @@ class JobService:
             if isinstance(value, datetime) and value.tzinfo is None:
                 values[key] = value.replace(tzinfo=timezone.utc)
         return AutomationJob.model_validate(values)
+
+    @classmethod
+    def _new_job_row(
+        cls,
+        target_at: datetime,
+        topic_override: str | None,
+        language: str,
+        target_duration_seconds: int,
+        voice_id: str | None,
+        idea_id: str | None = None,
+    ) -> AutomationJobRow:
+        now = cls._now()
+        return AutomationJobRow(
+            id=str(uuid4()),
+            state=JobState.QUEUED.value,
+            created_at=now,
+            updated_at=now,
+            target_at=target_at,
+            topic_override=topic_override,
+            idea_id=idea_id,
+            language=language,
+            target_duration_seconds=target_duration_seconds,
+            voice_id=voice_id,
+            action_token=cls._token(),
+        )

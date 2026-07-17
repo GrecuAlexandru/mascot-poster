@@ -106,7 +106,30 @@ rank,idea_id,title_ro,left_item_ro,right_item_ro,angle_ro,hook_ro,likely_source_
 
 Continue the CSV rows below that header and then close the fence.
 
-### 5. Editorial integrity note
+### 5. n8n import
+
+Repeat every surviving ranked candidate in one fenced JSON block using exactly this structure:
+
+```json
+{
+  "ideas": [
+    {
+      "idea_id": "IDEA-001",
+      "title": "Titlul românesc din tabel",
+      "left": "Obiectul din stânga",
+      "right": "Obiectul din dreapta",
+      "angle": "Unghiul editorial de cercetat, fără concluzii factuale inventate"
+    }
+  ]
+}
+```
+
+Include only candidates present in the final ranked table. Preserve their ranking order and stable
+IDs. The operator will copy this JSON block into the `ideas_json` input field of the n8n workflow
+`Mascot - Import idea batch`, so do not add fields, comments, trailing commas, or prose inside the
+fence.
+
+### 6. Editorial integrity note
 
 End with this exact sentence:
 

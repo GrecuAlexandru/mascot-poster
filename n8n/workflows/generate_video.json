@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const local = $now.setZone('Europe/Bucharest');\nconst morning = local.set({ hour: 9, minute: 0, second: 0, millisecond: 0 });\nconst evening = local.set({ hour: 17, minute: 0, second: 0, millisecond: 0 });\nconst target = local < morning\n  ? morning\n  : local < evening\n    ? evening\n    : morning.plus({ days: 1 });\nreturn [{ json: { target_at: target.toUTC().toISO(), language: 'ro', target_duration_seconds: 25 } }];"
+        "jsCode": "const local = $now.setZone('Europe/Bucharest');\nconst morning = local.set({ hour: 9, minute: 0, second: 0, millisecond: 0 });\nconst evening = local.set({ hour: 17, minute: 0, second: 0, millisecond: 0 });\nconst target = local < morning\n  ? morning\n  : local < evening\n    ? evening\n    : morning.plus({ days: 1 });\nreturn [{ json: { target_at: target.toUTC().toISO(), language: 'ro', target_duration_seconds: 25, use_next_idea: true } }];"
       },
       "id": "calculate-target",
       "name": "Set 09:00 or 17:00 target",
@@ -51,6 +51,38 @@
           "name": "Mascot Internal API"
         }
       }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "generation-status",
+              "name": "status",
+              "value": "={{ $json.status }}",
+              "type": "string"
+            },
+            {
+              "id": "created-job-id",
+              "name": "job_id",
+              "value": "={{ $json.status === 'NO_IDEA_AVAILABLE' ? null : $json.job.id }}",
+              "type": "string"
+            },
+            {
+              "id": "generation-message",
+              "name": "message",
+              "value": "={{ $json.status === 'NO_IDEA_AVAILABLE' ? 'Idea queue is empty; no job was created.' : 'Queued the next curated idea.' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "show-generation-result",
+      "name": "Show queue result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1000, 300]
     }
   ],
   "connections": {
@@ -59,6 +91,9 @@
     },
     "Set 09:00 or 17:00 target": {
       "main": [[{"node": "Create generation job", "type": "main", "index": 0}]]
+    },
+    "Create generation job": {
+      "main": [[{"node": "Show queue result", "type": "main", "index": 0}]]
     }
   },
   "settings": {

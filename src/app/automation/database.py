@@ -22,6 +22,7 @@ class AutomationJobRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     target_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     topic_override: Mapped[Optional[str]] = mapped_column(Text)
+    idea_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
     language: Mapped[str] = mapped_column(String(8), default="ro")
     target_duration_seconds: Mapped[int] = mapped_column(Integer, default=25)
     voice_id: Mapped[Optional[str]] = mapped_column(String(255))
@@ -51,6 +52,22 @@ class AutomationJobRow(Base):
     local_delete_after: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
+class AutomationIdeaRow(Base):
+    __tablename__ = "automation_ideas"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    external_id: Mapped[Optional[str]] = mapped_column(String(100))
+    title: Mapped[str] = mapped_column(String(300))
+    left_item: Mapped[str] = mapped_column(String(200))
+    right_item: Mapped[str] = mapped_column(String(200))
+    angle: Mapped[str] = mapped_column(Text, default="")
+    normalized_pair: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    state: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    automation_job_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
+
+
 class AutomationDatabase:
     def __init__(self, url: str):
         connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
@@ -65,6 +82,13 @@ class AutomationDatabase:
                     {"lock_id": 0x4D4153434F54},
                 )
                 Base.metadata.create_all(connection)
+                connection.execute(
+                    text(
+                        "ALTER TABLE automation_jobs "
+                        "ADD COLUMN IF NOT EXISTS idea_id VARCHAR(36)"
+                    ),
+                    {},
+                )
             return
         Base.metadata.create_all(self.engine)
 

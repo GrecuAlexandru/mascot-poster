@@ -1,0 +1,124 @@
+{
+  "name": "Mascot - Import idea batch",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-import-ideas",
+      "name": "Import ideas",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ideas-json-value",
+              "name": "ideas_json",
+              "value": "{\"ideas\":[]}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "paste-codex-json",
+      "name": "Paste Codex JSON here",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String($json.ideas_json ?? '').trim();\nconst unfenced = raw.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/, '');\nlet payload;\ntry {\n  payload = JSON.parse(unfenced);\n} catch (error) {\n  throw new Error(`ideas_json is not valid JSON: ${error.message}`);\n}\nif (!payload || !Array.isArray(payload.ideas)) {\n  throw new Error('ideas_json must contain an ideas array');\n}\nreturn [{ json: payload }];"
+      },
+      "id": "parse-idea-json",
+      "name": "Validate pasted JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mascot-api:8000/api/v1/automation/ideas/import",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "import-idea-api",
+      "name": "Import validated ideas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "Mascot Internal API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "accepted-count",
+              "name": "accepted_count",
+              "value": "={{ $json.accepted.length }}",
+              "type": "number"
+            },
+            {
+              "id": "skipped-count",
+              "name": "skipped_count",
+              "value": "={{ $json.skipped.length }}",
+              "type": "number"
+            },
+            {
+              "id": "accepted-details",
+              "name": "accepted",
+              "value": "={{ $json.accepted }}",
+              "type": "array"
+            },
+            {
+              "id": "skipped-details",
+              "name": "skipped",
+              "value": "={{ $json.skipped }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "show-import-result",
+      "name": "Review import result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Import ideas": {
+      "main": [[{"node": "Paste Codex JSON here", "type": "main", "index": 0}]]
+    },
+    "Paste Codex JSON here": {
+      "main": [[{"node": "Validate pasted JSON", "type": "main", "index": 0}]]
+    },
+    "Validate pasted JSON": {
+      "main": [[{"node": "Import validated ideas", "type": "main", "index": 0}]]
+    },
+    "Import validated ideas": {
+      "main": [[{"node": "Review import result", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "8237c097-1b5e-47e6-80a5-f58ef244c0a0"
+}

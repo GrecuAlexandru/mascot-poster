@@ -1,0 +1,65 @@
+{
+  "name": "Mascot - Export idea history",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-export-history",
+      "name": "Export history",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://mascot-api:8000/api/v1/automation/ideas/history",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "fetch-idea-history",
+      "name": "Fetch complete idea history",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "Mascot Internal API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "copy-history-value",
+              "name": "copy_this_into_codex",
+              "value": "={{ $json.markdown }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "show-copy-ready-history",
+      "name": "Copy this into Codex",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [740, 300]
+    }
+  ],
+  "connections": {
+    "Export history": {
+      "main": [[{"node": "Fetch complete idea history", "type": "main", "index": 0}]]
+    },
+    "Fetch complete idea history": {
+      "main": [[{"node": "Copy this into Codex", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "f072fe6e-949b-46de-af36-c53fcfbd1a6c"
+}

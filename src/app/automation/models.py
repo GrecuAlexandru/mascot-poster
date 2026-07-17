@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class JobState(str, Enum):
@@ -29,6 +29,57 @@ class RegenerationKind(str, Enum):
     FULL = "FULL"
 
 
+class IdeaState(str, Enum):
+    QUEUED = "QUEUED"
+    CONSUMED = "CONSUMED"
+
+
+class IdeaDraft(BaseModel):
+    idea_id: Optional[str] = Field(default=None, max_length=100)
+    title: str = Field(min_length=1, max_length=300)
+    left: str = Field(min_length=1, max_length=200)
+    right: str = Field(min_length=1, max_length=200)
+    angle: str = Field(default="", max_length=2000)
+
+
+class AutomationIdea(BaseModel):
+    id: str
+    idea_id: Optional[str] = None
+    title: str
+    left: str
+    right: str
+    angle: str = ""
+    state: IdeaState
+    created_at: datetime
+    consumed_at: Optional[datetime] = None
+    automation_job_id: Optional[str] = None
+
+
+class SkippedIdea(BaseModel):
+    idea_id: Optional[str] = None
+    title: str
+    reason: str
+
+
+class IdeaImportResult(BaseModel):
+    accepted: list[AutomationIdea]
+    skipped: list[SkippedIdea]
+
+
+class IdeaHistoryEntry(BaseModel):
+    title: str
+    left: str = ""
+    right: str = ""
+    source: str
+
+
+class IdeaHistoryExport(BaseModel):
+    used: list[IdeaHistoryEntry]
+    queued: list[IdeaHistoryEntry]
+    legacy: list[IdeaHistoryEntry]
+    markdown: str
+
+
 class AutomationJob(BaseModel):
     id: str
     state: JobState
@@ -36,6 +87,7 @@ class AutomationJob(BaseModel):
     updated_at: datetime
     target_at: datetime
     topic_override: Optional[str] = None
+    idea_id: Optional[str] = None
     language: str = "ro"
     target_duration_seconds: int = 25
     voice_id: Optional[str] = None
