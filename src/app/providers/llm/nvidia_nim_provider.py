@@ -8,7 +8,6 @@ from typing import Any, Optional, TypeVar
 
 import httpx
 from pydantic import BaseModel, ValidationError
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.providers.llm.base import LLMError, LLMProvider as BaseLLMProvider, LLMRepairError
 from app.services.job_cost_ledger import record_cost_event
@@ -26,14 +25,20 @@ class NvidiaNimProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "qwen/qwen3.5-397b-a17b",
+        model: str = "deepseek-ai/deepseek-v4-pro",
         base_url: str = "https://integrate.api.nvidia.com/v1",
         timeout: float = 300.0,
         skills_content: Optional[str] = None,
         transport: Optional[httpx.AsyncBaseTransport] = None,
+        fallback_models: Optional[list[str]] = None,
     ):
         self._api_key = api_key
         self._model = model
+        self._models = list(dict.fromkeys(
+            candidate.strip()
+            for candidate in [model, *(fallback_models or [])]
+            if candidate.strip()
+        ))
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._skills_content = skills_content or ""
@@ -58,9 +63,10 @@ class NvidiaNimProvider(BaseLLMProvider):
         user_prompt: str,
         temperature: float,
         max_tokens: int,
+        model: str,
     ) -> dict[str, Any]:
         return {
-            "model": self._model,
+            "model": model,
             "messages": [
                 {"role": "system", "content": self._build_system_prompt(system_prompt)},
                 {"role": "user", "content": user_prompt},
@@ -82,11 +88,12 @@ class NvidiaNimProvider(BaseLLMProvider):
         data: dict[str, Any],
         operation: str,
         request_key: str,
+        attempted_model: str,
     ) -> None:
         usage = data.get("usage", {}) or {}
         record_cost_event(
             provider=self.name,
-            model=data.get("model", self._model),
+            model=data.get("model", attempted_model),
             operation=operation,
             input_units=usage.get("prompt_tokens", 0),
             output_units=usage.get("completion_tokens", 0),
@@ -97,12 +104,6 @@ class NvidiaNimProvider(BaseLLMProvider):
             request_key=request_key,
         )
 
-    @retry(
-        retry=retry_if_exception_type(NvidiaNimTransientError),
-        stop=stop_after_attempt(2),
-        wait=wait_exponential(multiplier=0.5, min=0.5, max=2),
-        reraise=True,
-    )
     async def complete(
         self,
         system_prompt: str,
@@ -112,90 +113,102 @@ class NvidiaNimProvider(BaseLLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> str:
-        body = self._build_request_body(
-            system_prompt,
-            user_prompt,
-            temperature,
-            max_tokens,
-        )
-        request_key = hashlib.sha256(
-            json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
-        ).hexdigest()
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
-        try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout,
-                transport=self._transport,
-            ) as client:
-                response = await client.post(
-                    f"{self._base_url}/chat/completions",
-                    headers=headers,
-                    json=body,
+        failures: list[NvidiaNimTransientError] = []
+        for model in self._models:
+            body = self._build_request_body(
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_tokens,
+                model,
+            )
+            request_key = hashlib.sha256(
+                json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self._timeout,
+                    transport=self._transport,
+                ) as client:
+                    response = await client.post(
+                        f"{self._base_url}/chat/completions",
+                        headers=headers,
+                        json=body,
+                    )
+            except httpx.TimeoutException as exc:
+                message = f"NVIDIA NIM request timed out after {self._timeout:g} seconds"
+                record_cost_event(
+                    provider=self.name,
+                    model=model,
+                    operation="chat_completion",
+                    status="failed",
+                    pricing_source="request_failed",
+                    error=message,
+                    request_key=request_key,
                 )
-        except httpx.TimeoutException as exc:
-            message = f"NVIDIA NIM request timed out after {self._timeout:g} seconds"
-            record_cost_event(
-                provider=self.name,
-                model=self._model,
-                operation="chat_completion",
-                status="failed",
-                pricing_source="request_failed",
-                error=message,
-                request_key=request_key,
-            )
-            raise NvidiaNimTransientError(message) from exc
-        except httpx.TransportError as exc:
-            detail = str(exc).strip() or "no details provided"
-            message = f"NVIDIA NIM transport error: {type(exc).__name__}: {detail}"
-            record_cost_event(
-                provider=self.name,
-                model=self._model,
-                operation="chat_completion",
-                status="failed",
-                pricing_source="request_failed",
-                error=message,
-                request_key=request_key,
-            )
-            raise NvidiaNimTransientError(message) from exc
-        if response.status_code == 429 or response.status_code >= 500:
-            record_cost_event(
-                provider=self.name,
-                model=self._model,
-                operation="chat_completion",
-                status="failed",
-                pricing_source="request_failed",
-                error=f"HTTP {response.status_code}",
-                request_key=request_key,
-            )
-            raise NvidiaNimTransientError(
-                f"NVIDIA NIM unavailable: HTTP {response.status_code}"
-            )
-        if response.status_code != 200:
-            record_cost_event(
-                provider=self.name,
-                model=self._model,
-                operation="chat_completion",
-                status="failed",
-                pricing_source="request_failed",
-                error=f"HTTP {response.status_code}",
-                request_key=request_key,
-            )
-            raise LLMError(
-                f"NVIDIA NIM API error {response.status_code}: {response.text[:500]}"
-            )
-        data = response.json()
-        self._record_usage(data, "chat_completion", request_key)
-        try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise LLMError("NVIDIA NIM response did not contain message content") from exc
-        if not isinstance(content, str):
-            raise LLMError("NVIDIA NIM message content was not text")
-        return content
+                failures.append(NvidiaNimTransientError(message))
+                continue
+            except httpx.TransportError as exc:
+                detail = str(exc).strip() or "no details provided"
+                message = f"NVIDIA NIM transport error: {type(exc).__name__}: {detail}"
+                record_cost_event(
+                    provider=self.name,
+                    model=model,
+                    operation="chat_completion",
+                    status="failed",
+                    pricing_source="request_failed",
+                    error=message,
+                    request_key=request_key,
+                )
+                failures.append(NvidiaNimTransientError(message))
+                continue
+            if response.status_code in {404, 429} or response.status_code >= 500:
+                message = f"NVIDIA NIM unavailable: HTTP {response.status_code}"
+                record_cost_event(
+                    provider=self.name,
+                    model=model,
+                    operation="chat_completion",
+                    status="failed",
+                    pricing_source="request_failed",
+                    error=f"HTTP {response.status_code}",
+                    request_key=request_key,
+                )
+                failures.append(NvidiaNimTransientError(message))
+                continue
+            if response.status_code != 200:
+                record_cost_event(
+                    provider=self.name,
+                    model=model,
+                    operation="chat_completion",
+                    status="failed",
+                    pricing_source="request_failed",
+                    error=f"HTTP {response.status_code}",
+                    request_key=request_key,
+                )
+                raise LLMError(
+                    f"NVIDIA NIM API error {response.status_code}: {response.text[:500]}"
+                )
+            data = response.json()
+            self._record_usage(data, "chat_completion", request_key, model)
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise LLMError("NVIDIA NIM response did not contain message content") from exc
+            if not isinstance(content, str):
+                raise LLMError("NVIDIA NIM message content was not text")
+            return content
+        attempted = ", ".join(self._models)
+        error = NvidiaNimTransientError(
+            f"NVIDIA NIM unavailable after attempting models: {attempted}"
+        )
+        if failures:
+            raise error from failures[-1]
+        raise error
 
     async def complete_json(
         self,

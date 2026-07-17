@@ -42,7 +42,11 @@ def test_text_roles_use_nvidia_nim_when_switch_is_enabled(monkeypatch) -> None:
     ]
 
     assert all(isinstance(provider, NvidiaNimProvider) for provider in providers)
-    assert {provider._model for provider in providers} == {"qwen/qwen3.5-397b-a17b"}
+    assert all(provider._models == [
+        "deepseek-ai/deepseek-v4-pro",
+        "minimaxai/minimax-m2.7",
+        "nvidia/nemotron-3-ultra-550b-a55b",
+    ] for provider in providers)
 
 
 def test_nvidia_selection_requires_nvidia_key_not_openrouter_key(monkeypatch) -> None:
@@ -103,6 +107,22 @@ def test_nvidia_timeout_is_configurable(monkeypatch) -> None:
 
     assert isinstance(provider, NvidiaNimProvider)
     assert provider._timeout == 345
+
+
+def test_nvidia_fallback_models_are_trimmed_and_deduplicated(monkeypatch) -> None:
+    settings = Settings(
+        _env_file=None,
+        USE_NVIDIA_NIM_TEXT_LLM=True,
+        NVIDIA_NIM_API_KEY="nvidia-key",
+        NVIDIA_NIM_MODEL="primary/model",
+        NVIDIA_NIM_FALLBACK_MODELS=" second/model, ,third/model,second/model ",
+    )
+    monkeypatch.setattr(config, "_settings", settings)
+
+    provider = config.get_llm_provider()
+
+    assert isinstance(provider, NvidiaNimProvider)
+    assert provider._models == ["primary/model", "second/model", "third/model"]
 
 
 def test_streamlit_text_factory_uses_configured_nvidia_provider(monkeypatch) -> None:

@@ -60,8 +60,12 @@ class Settings(BaseSettings):
         alias="NVIDIA_NIM_BASE_URL",
     )
     nvidia_nim_model: str = Field(
-        default="qwen/qwen3.5-397b-a17b",
+        default="deepseek-ai/deepseek-v4-pro",
         alias="NVIDIA_NIM_MODEL",
+    )
+    nvidia_nim_fallback_models: str = Field(
+        default="minimaxai/minimax-m2.7,nvidia/nemotron-3-ultra-550b-a55b",
+        alias="NVIDIA_NIM_FALLBACK_MODELS",
     )
     nvidia_nim_timeout_seconds: float = Field(
         default=300.0,
@@ -218,6 +222,11 @@ def _build_text_llm_provider(settings: Settings, openrouter_model: str) -> Optio
             base_url=settings.nvidia_nim_base_url,
             timeout=settings.nvidia_nim_timeout_seconds,
             skills_content=skills_content,
+            fallback_models=[
+                model.strip()
+                for model in settings.nvidia_nim_fallback_models.split(",")
+                if model.strip()
+            ],
         )
     if not settings.llm_api_key:
         return None
