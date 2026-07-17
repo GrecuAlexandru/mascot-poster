@@ -476,7 +476,7 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
     assert transcript.beats[0].pause_end == pytest.approx(2.3)
     assert transcript.duration_seconds == pytest.approx(14.2)
     assert provider.calls[1]["previous_text"] == "unu doi."
-    assert [call["settings"].speed for call in provider.calls] == [1.05, 1.05, 0.88]
+    assert [call["settings"].speed for call in provider.calls] == [1.05, 1.05, 1.144]
     assert provider.calls[-1]["text"] == "Vă pupă Pufăilă!"
 
 

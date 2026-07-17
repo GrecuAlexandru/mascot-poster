@@ -116,7 +116,7 @@ class BeatTTSService:
     @staticmethod
     def _settings_for_beat(settings: TTSSettings, beat_id: str) -> TTSSettings:
         if beat_id == "closing":
-            return settings.model_copy(update={"speed": 0.88})
+            return settings.model_copy(update={"speed": 1.144})
         return settings
 
     @staticmethod
