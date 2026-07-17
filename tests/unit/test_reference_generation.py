@@ -433,7 +433,7 @@ def test_direction_validator_choreographs_the_required_hook() -> None:
     ]
 
 
-def test_direction_validator_balances_two_sided_beats_without_diacritics() -> None:
+def test_direction_validator_frames_two_sided_beats_without_pointing() -> None:
     script = ReferenceScriptPackage(
         title="Cacao praf vs Ciocolată topită",
         left_item="Cacao praf",
@@ -465,15 +465,13 @@ def test_direction_validator_balances_two_sided_beats_without_diacritics() -> No
     aligned = ReferenceDirectionValidator().align_with_script(plan, script)
     body_cues = [cue for cue in aligned.cues if cue.beat_id == "body"]
 
-    assert [cue.word_index for cue in body_cues] == [0, 4]
-    assert [cue.mascot_pose for cue in body_cues] == [
-        MascotPose.POINT_UP_LEFT,
-        MascotPose.POINT_UP_RIGHT,
-    ]
-    assert [cue.product_focus for cue in body_cues] == [Focus.LEFT, Focus.RIGHT]
+    # A beat that talks about both products gets one non-pointing frame, never a point.
+    assert [
+        (cue.word_index, cue.mascot_pose, cue.product_focus) for cue in body_cues
+    ] == [(0, MascotPose.PRESENT_BOTH, Focus.BOTH)]
 
 
-def test_direction_fallback_balances_every_two_sided_body_beat() -> None:
+def test_direction_fallback_frames_two_sided_body_beats_without_pointing() -> None:
     script = ReferenceScriptPackage(
         title="Cacao praf vs Ciocolată topită",
         left_item="Cacao praf",
@@ -500,9 +498,12 @@ def test_direction_fallback_balances_every_two_sided_body_beat() -> None:
 
     fallback = ReferenceDirectionValidator().fallback(script)
 
-    for beat_id in ("body_1", "body_2"):
-        cues = [cue for cue in fallback.cues if cue.beat_id == beat_id]
-        assert [cue.product_focus for cue in cues] == [Focus.LEFT, Focus.RIGHT]
+    body_cues = [cue for cue in fallback.cues if cue.beat_id in ("body_1", "body_2")]
+    # Both body beats discuss the two products, so neither may point at a single side. The second
+    # beat keeps the frame from the first (a repeated identical cue would be a visual no-op).
+    assert [
+        (cue.beat_id, cue.mascot_pose, cue.product_focus) for cue in body_cues
+    ] == [("body_1", MascotPose.PRESENT_BOTH, Focus.BOTH)]
 
 
 def test_direction_service_replaces_all_neutral_anchor_travel() -> None:
@@ -603,7 +604,7 @@ def test_direction_alignment_mirrors_inverted_pointing() -> None:
     assert aligned.cues[1].product_focus == Focus.RIGHT
 
 
-def test_direction_alignment_balances_inflected_two_sided_beats() -> None:
+def test_direction_alignment_frames_inflected_two_sided_beats() -> None:
     from app.domain.enums import SfxKind
     from app.services.reference_direction_validator import ReferenceDirectionValidator
 
@@ -640,15 +641,14 @@ def test_direction_alignment_balances_inflected_two_sided_beats() -> None:
 
     aligned = ReferenceDirectionValidator().align_with_script(plan, script)
 
-    assert [cue.word_index for cue in aligned.cues] == [0, 2]
-    assert [cue.mascot_pose for cue in aligned.cues] == [
-        MascotPose.POINT_UP_LEFT,
-        MascotPose.POINT_UP_RIGHT,
-    ]
-    assert [cue.product_focus for cue in aligned.cues] == [Focus.LEFT, Focus.RIGHT]
+    # Inflected forms still mark the beat as two-sided, so the pointing cue becomes one
+    # non-pointing frame of the pair.
+    assert [
+        (cue.word_index, cue.mascot_pose, cue.product_focus) for cue in aligned.cues
+    ] == [(0, MascotPose.PRESENT_BOTH, Focus.BOTH)]
 
 
-def test_direction_validator_drops_wrong_focus_on_continuation_beats() -> None:
+def test_direction_validator_mirrors_wrong_side_on_prefixed_continuation_beats() -> None:
     script = ReferenceScriptPackage(
         title="Brânză de burduf vs Brânză telemea",
         left_item="Brânză de burduf",
@@ -682,14 +682,61 @@ def test_direction_validator_drops_wrong_focus_on_continuation_beats() -> None:
         ),
     ])
 
-    aligned = ReferenceDirectionValidator().align_with_script(plan, script)
+    validator = ReferenceDirectionValidator()
+    aligned = validator.align_with_script(plan, script)
 
-    # The wrong right-pointing cue on the continuation beat (which names neither product) is
-    # dropped, so the frame keeps the previous left focus instead of flipping to the wrong item.
-    assert all(cue.beat_id != "left_taste" for cue in aligned.cues)
+    # The left_ id prefix marks the continuation beat as LEFT even though its text names neither
+    # product, so the wrong right-pointing cue is mirrored back instead of flipping the mascot
+    # toward the wrong item.
+    taste_cues = [cue for cue in aligned.cues if cue.beat_id == "left_taste"]
+    assert [(cue.mascot_pose, cue.product_focus) for cue in taste_cues] == [
+        (MascotPose.POINT_UP_LEFT, Focus.LEFT)
+    ]
     left_cues = [cue for cue in aligned.cues if cue.beat_id == "left_intro"]
     assert left_cues and left_cues[0].product_focus == Focus.LEFT
     assert left_cues[0].mascot_pose == MascotPose.POINT_UP_LEFT
+
+    # After normalization the mirrored cue disappears as a visual no-op: the mascot simply keeps
+    # pointing left across both beats.
+    normalized = validator.normalize(aligned)
+    assert all(cue.beat_id != "left_taste" for cue in normalized.cues)
+
+
+def test_direction_validator_releases_pointing_on_general_beats() -> None:
+    script = ReferenceScriptPackage(
+        title="Cafea vs Ceai",
+        left_item="Cafea",
+        right_item="Ceai",
+        hook="Comparația contează.",
+        beats=[
+            NarrationBeat(id="left_intro", text="Cafeaua acționează rapid."),
+            NarrationBeat(id="memory", text=MEMORY_LINE),
+        ],
+        closing=ClosingBeat(
+            id="closing",
+            text="Așadar, alege băutura potrivită pentru ritmul tău.",
+            pause_after_ms=500,
+        ),
+        caption="Cafea sau ceai?",
+        memory_device=_memory("memory"),
+    )
+    plan = DirectionPlan(cues=[
+        DirectionCue(
+            beat_id="left_intro",
+            word_index=0,
+            mascot_pose=MascotPose.POINT_UP_LEFT,
+            product_focus=Focus.LEFT,
+        ),
+    ])
+
+    aligned = ReferenceDirectionValidator().align_with_script(plan, script)
+
+    # The memory beat talks about the general idea, so the mascot must stop pointing left there
+    # instead of holding the point from the previous beat.
+    memory_cues = [cue for cue in aligned.cues if cue.beat_id == "memory"]
+    assert [
+        (cue.word_index, cue.mascot_pose, cue.product_focus) for cue in memory_cues
+    ] == [(0, MascotPose.EXPLAINING, Focus.NEUTRAL)]
 
 
 def test_pair_repair_regenerates_only_selected_side_once(tmp_path: Path) -> None:

@@ -143,7 +143,29 @@ Fraze scurte, o idee pe rând. Fără termeni tehnici, cuvinte pretențioase sau
 un cuvânt e complicat, înlocuiește-l cu unul mai simplu sau explică-l în două cuvinte simple (de
 exemplu spune «uleiuri din plante» în loc de «uleiuri vegetale rafinate», «se strică mai greu» în
 loc de «are o perioadă de conservare extinsă»). Nu simplifica ideea în sine, doar limbajul: rămâi
-exact, dar ușor de urmărit de oricine."""
+exact, dar ușor de urmărit de oricine.
+
+ROMÂNĂ NATURALĂ, NU TRADUSĂ DIN ENGLEZĂ:
+Scrie direct în română, cum vorbesc oamenii la masă, nu ca o traducere. Testul e simplu: citește
+beat-ul în gând; dacă nu l-ai spune cu voce tare unui prieten exact așa, reformulează-l. Calcuri
+de evitat (stânga = traducere din engleză, dreapta = română firească):
+- «face sens» → «are sens» sau «e logic».
+- «este despre» → «e vorba de».
+- «vine cu» pentru o calitate → «are»: «are aromă puternică», nu «vine cu o aromă puternică».
+- «oferă o experiență» → spune concret ce face: «se topește uniform», «ține de foame».
+- «datorită faptului că» → «pentru că».
+- fără englezisme când există cuvânt românesc simplu: «gust», nu «flavor»; «proaspăt», nu
+  «fresh»; «ieftin», nu «budget-friendly»; «sfat», nu «tip».
+- păstrează ordinea firească a cuvintelor din română, nu topica din engleză.
+
+LOGICA NARAȚIUNII (fiecare beat trebuie să aibă sens):
+- Cineva care doar ascultă episodul o singură dată, fără să vadă ecranul, trebuie să înțeleagă
+  fiecare propoziție din prima.
+- Fiecare beat continuă natural ideea dinainte; nu sări la altă idee fără legătură.
+- Nu folosi «el», «ea», «asta» dacă nu e limpede la ce se referă; mai bine repetă numele
+  obiectului.
+- Nu pomeni ceva ce nu ai explicat încă.
+- Compară mere cu mere: dacă spui prețul unuia, spune și prețul celuilalt, nu textura."""
 
 
 @lru_cache(maxsize=1)
@@ -205,6 +227,11 @@ class ReferenceScriptService:
             + "\n\nREGULI DE STRUCTURĂ ȘI RITM:\n"
             "Folosește 4-7 beat-uri de explicație, text vorbit natural, fiecare cu un id stabil, "
             "iar pause_after_ms trebuie să fie una dintre 0, 150, 300, 500, 750, 1000. "
+            "Id-ul fiecărui beat spune despre ce e beat-ul, fiindcă mascota se orientează după el: "
+            "beat-urile despre obiectul din STÂNGA au id care începe cu «left_» (left_origine, "
+            "left_gust), cele despre obiectul din DREAPTA încep cu «right_», chiar și când textul "
+            "nu mai repetă numele obiectului. Beat-ul cu propoziția de reținut are id «memory», iar "
+            "un beat despre amândouă sau despre ideea generală nu primește prefix de parte. "
             "Preferă pauze de 300-500 ms între ideile corpului și folosește 150 ms doar între "
             "fraze scurte care trebuie să curgă împreună. "
             f"PRIMUL beat trebuie să fie exact această deschidere, cuvânt cu cuvânt: "

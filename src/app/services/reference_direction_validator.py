@@ -32,7 +32,7 @@ class ReferenceDirectionValidator:
         left_words = self._tokens(script.left_item)
         right_words = self._tokens(script.right_item)
         beat_side = {
-            beat.id: self._beat_side(beat.text, left_words, right_words)
+            beat.id: self._beat_side(beat.id, beat.text, left_words, right_words)
             for beat in script.all_beats
         }
         cues: list[DirectionCue] = []
@@ -42,9 +42,9 @@ class ReferenceDirectionValidator:
                 cues.append(cue)
                 continue
             if side == Focus.NEUTRAL:
-                # This beat names neither product (a continuation or a summary line). A cue that
-                # points at or focuses one side here would highlight the wrong item, so drop it and
-                # let the frame keep the previous, correct focus. Genuine both/neutral cues stay.
+                # This beat is about the general idea (a verdict, a summary, the closing). A cue
+                # that points at or focuses one side here would highlight an item the narration is
+                # not talking about, so drop it. Genuine both/neutral cues stay.
                 if (
                     cue.product_focus in (Focus.LEFT, Focus.RIGHT)
                     or cue.mascot_pose in self.directional_poses
@@ -59,11 +59,18 @@ class ReferenceDirectionValidator:
             if cue.mascot_pose in wrong_poses:
                 update["mascot_pose"] = self.mirror_poses[cue.mascot_pose]
             cues.append(cue.model_copy(update=update) if update else cue)
-        balanced = self._enforce_comparison_cues(DirectionPlan(cues=cues), script)
-        return self._enforce_hook_cues(balanced, script)
+        framed = self._enforce_both_frame(DirectionPlan(cues=cues), script, beat_side)
+        hooked = self._enforce_hook_cues(framed, script)
+        return self._release_stuck_pointing(hooked, script, beat_side)
 
     @classmethod
-    def _beat_side(cls, text: str, left_words: list[str], right_words: list[str]) -> Focus:
+    def _beat_side(
+        cls,
+        beat_id: str,
+        text: str,
+        left_words: list[str],
+        right_words: list[str],
+    ) -> Focus:
         words = cls._tokens(text)
         left_pos = cls._find_item(words, left_words, right_words)
         right_pos = cls._find_item(words, right_words, left_words)
@@ -73,43 +80,48 @@ class ReferenceDirectionValidator:
             return Focus.LEFT
         if right_pos is not None:
             return Focus.RIGHT
+        # Continuation beats often describe an item without naming it; the script names those
+        # beats with a left_/right_ id prefix so the mascot keeps pointing at the right side.
+        lowered = beat_id.casefold()
+        if lowered == "left" or lowered.startswith("left_"):
+            return Focus.LEFT
+        if lowered == "right" or lowered.startswith("right_"):
+            return Focus.RIGHT
         return Focus.NEUTRAL
 
-    def _enforce_comparison_cues(
+    def _enforce_both_frame(
         self,
         plan: DirectionPlan,
         script: ReferenceScriptPackage,
+        beat_side: dict[str, Focus],
     ) -> DirectionPlan:
         replacements: dict[str, list[DirectionCue]] = {}
         for beat in script.beats:
-            if beat.id == "hook":
+            if beat.id == "hook" or beat_side.get(beat.id) != Focus.BOTH:
                 continue
-            words = self._tokens(beat.text)
-            left_words = self._tokens(script.left_item)
-            right_words = self._tokens(script.right_item)
-            left_start = self._find_item(words, left_words, right_words)
-            right_start = self._find_item(words, right_words, left_words)
-            if left_start is None or right_start is None or left_start == right_start:
-                continue
-            replacements[beat.id] = sorted(
-                [
-                    DirectionCue(
-                        beat_id=beat.id,
-                        word_index=left_start,
-                        mascot_pose=MascotPose.POINT_UP_LEFT,
-                        mascot_anchor=MascotAnchor.CENTER,
-                        product_focus=Focus.LEFT,
-                    ),
-                    DirectionCue(
-                        beat_id=beat.id,
-                        word_index=right_start,
-                        mascot_pose=MascotPose.POINT_UP_RIGHT,
-                        mascot_anchor=MascotAnchor.CENTER,
-                        product_focus=Focus.RIGHT,
-                    ),
-                ],
-                key=lambda cue: cue.word_index,
-            )
+            # A beat that talks about both items must not point at either one: keep the plan's
+            # non-pointing cues (widened to a both focus) or frame the pair with a single cue.
+            kept = [
+                cue.model_copy(update={"product_focus": Focus.BOTH})
+                if cue.product_focus in (Focus.LEFT, Focus.RIGHT)
+                else cue
+                for cue in plan.cues
+                if cue.beat_id == beat.id and cue.mascot_pose not in self.directional_poses
+            ]
+            if not kept:
+                pose = (
+                    MascotPose.COMPARE_LEFT_RIGHT
+                    if beat.id.casefold().startswith("verdict")
+                    else MascotPose.PRESENT_BOTH
+                )
+                kept = [DirectionCue(
+                    beat_id=beat.id,
+                    word_index=0,
+                    mascot_pose=pose,
+                    mascot_anchor=MascotAnchor.CENTER,
+                    product_focus=Focus.BOTH,
+                )]
+            replacements[beat.id] = kept
         result: list[DirectionCue] = []
         known_ids = {beat.id for beat in script.all_beats}
         for beat in script.all_beats:
@@ -118,6 +130,46 @@ class ReferenceDirectionValidator:
             else:
                 result.extend(cue for cue in plan.cues if cue.beat_id == beat.id)
         result.extend(cue for cue in plan.cues if cue.beat_id not in known_ids)
+        return DirectionPlan(cues=result)
+
+    def _release_stuck_pointing(
+        self,
+        plan: DirectionPlan,
+        script: ReferenceScriptPackage,
+        beat_side: dict[str, Focus],
+    ) -> DirectionPlan:
+        # A pose stays on screen until the next cue, so a general beat with no cue of its own
+        # would keep the mascot pointing at an item it is no longer talking about.
+        cues_by_beat: dict[str, list[DirectionCue]] = {}
+        for cue in plan.cues:
+            cues_by_beat.setdefault(cue.beat_id, []).append(cue)
+        result: list[DirectionCue] = []
+        active_pose: MascotPose | None = None
+        for beat in script.all_beats:
+            beat_cues = cues_by_beat.pop(beat.id, [])
+            if (
+                not beat_cues
+                and beat_side.get(beat.id) == Focus.NEUTRAL
+                and active_pose in self.directional_poses
+            ):
+                if beat.id == "closing":
+                    pose, focus = MascotPose.THUMBS_UP, Focus.BOTH
+                elif beat.id.casefold().startswith("verdict"):
+                    pose, focus = MascotPose.COMPARE_LEFT_RIGHT, Focus.BOTH
+                else:
+                    pose, focus = MascotPose.EXPLAINING, Focus.NEUTRAL
+                beat_cues = [DirectionCue(
+                    beat_id=beat.id,
+                    word_index=0,
+                    mascot_pose=pose,
+                    mascot_anchor=MascotAnchor.CENTER,
+                    product_focus=focus,
+                )]
+            result.extend(beat_cues)
+            if beat_cues:
+                active_pose = beat_cues[-1].mascot_pose
+        for orphan_cues in cues_by_beat.values():
+            result.extend(orphan_cues)
         return DirectionPlan(cues=result)
 
     def _enforce_hook_cues(
@@ -229,12 +281,17 @@ class ReferenceDirectionValidator:
                 "mascot_anchor": MascotAnchor.CENTER,
                 "mascot_pose": pose,
             })
+            if (
+                previous is not None
+                and normalized.mascot_pose == previous.mascot_pose
+                and normalized.product_focus == previous.product_focus
+            ):
+                # Nothing changes on screen; keeping the cue would only add a spurious sound.
+                continue
             if previous is None or normalized.mascot_pose != previous.mascot_pose:
                 sfx = SfxKind.POSE_POP
-            elif normalized.product_focus != previous.product_focus:
-                sfx = SfxKind.FOCUS_TICK
             else:
-                sfx = SfxKind.NONE
+                sfx = SfxKind.FOCUS_TICK
             normalized = normalized.model_copy(update={"sfx_kind": sfx})
             result.append(normalized)
             previous = normalized
@@ -248,15 +305,22 @@ class ReferenceDirectionValidator:
         problems: list[str] = []
         beats = {beat.id: beat for beat in script.all_beats}
         counts = Counter(cue.beat_id for cue in plan.cues)
+        left_words = self._tokens(script.left_item)
+        right_words = self._tokens(script.right_item)
+        beat_side = {
+            beat.id: self._beat_side(beat.id, beat.text, left_words, right_words)
+            for beat in script.all_beats
+        }
         if not plan.cues:
             problems.append("direction plan has no cues")
         if plan.cues and all(cue.mascot_pose == MascotPose.NEUTRAL for cue in plan.cues):
             problems.append("direction plan uses only the neutral pose")
-        if len(script.beats) >= 2 and not any(
+        sides = set(beat_side.values())
+        if (Focus.LEFT in sides or Focus.BOTH in sides) and not any(
             cue.mascot_pose in self.left_poses for cue in plan.cues
         ):
             problems.append("direction plan never points left")
-        if len(script.beats) >= 2 and not any(
+        if (Focus.RIGHT in sides or Focus.BOTH in sides) and not any(
             cue.mascot_pose in self.right_poses for cue in plan.cues
         ):
             problems.append("direction plan never points right")
@@ -287,27 +351,26 @@ class ReferenceDirectionValidator:
 
     def fallback(self, script: ReferenceScriptPackage) -> DirectionPlan:
         cues: list[DirectionCue] = []
-        body_index = 0
-        left_name = script.left_item.casefold()
-        right_name = script.right_item.casefold()
+        left_words = self._tokens(script.left_item)
+        right_words = self._tokens(script.right_item)
         for index, beat in enumerate(script.all_beats):
-            text = beat.text.casefold()
+            side = self._beat_side(beat.id, beat.text, left_words, right_words)
             if beat.id == "closing":
                 pose = MascotPose.THUMBS_UP
                 focus = Focus.BOTH
-            elif left_name in text and right_name not in text:
+            elif side == Focus.LEFT:
                 pose = MascotPose.POINT_UP_LEFT
                 focus = Focus.LEFT
-            elif right_name in text and left_name not in text:
+            elif side == Focus.RIGHT:
                 pose = MascotPose.POINT_UP_RIGHT
                 focus = Focus.RIGHT
-            elif index == 0:
+            elif side == Focus.BOTH or index == 0:
                 pose = MascotPose.PRESENT_BOTH
                 focus = Focus.BOTH
             else:
-                focus = Focus.LEFT if body_index % 2 == 0 else Focus.RIGHT
-                pose = MascotPose.POINT_UP_LEFT if focus == Focus.LEFT else MascotPose.POINT_UP_RIGHT
-                body_index += 1
+                # A general beat frames the idea, never a leftover point at one item.
+                pose = MascotPose.EXPLAINING
+                focus = Focus.NEUTRAL
             cues.append(DirectionCue(
                 beat_id=beat.id,
                 word_index=0,
@@ -316,4 +379,4 @@ class ReferenceDirectionValidator:
                 product_focus=focus,
                 sfx_kind=SfxKind.POSE_POP,
             ))
-        return self.align_with_script(DirectionPlan(cues=cues), script)
+        return self.normalize(self.align_with_script(DirectionPlan(cues=cues), script))
