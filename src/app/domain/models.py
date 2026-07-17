@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unicodedata
+import re
 from pathlib import Path
 from typing import Literal, Optional
 from uuid import UUID, uuid4
@@ -12,9 +13,34 @@ from app.domain.enums import (
     ImageMotion,
     MascotAnchor,
     MascotPose,
+    MemoryDeviceKind,
     SfxKind,
     Transition,
+    VisualEventKind,
 )
+
+
+class TopicSignal(BaseModel):
+    score: int = Field(ge=0, le=5)
+    reason: str = Field(min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("reason must not be blank")
+        return stripped
+
+
+class TopicSelectionSignals(BaseModel):
+    common_confusion: TopicSignal
+    everyday_familiarity: TopicSignal
+    cultural_debate: TopicSignal
+    surprising_payoff: TopicSignal
+    shareability: TopicSignal
+    visual_feasibility: TopicSignal
+    research_risk: TopicSignal
 
 
 class TopicCandidate(BaseModel):
@@ -24,6 +50,7 @@ class TopicCandidate(BaseModel):
     angle: str
     why_it_might_work: str = ""
     risk_level: Literal["low", "medium", "high"] = "low"
+    selection_signals: Optional[TopicSelectionSignals] = None
 
 
 class TopicSpec(BaseModel):
@@ -41,7 +68,7 @@ class TopicSpec(BaseModel):
 class GenerationRequest(BaseModel):
     topic_override: Optional[str] = None
     language: Literal["ro", "en"] = "ro"
-    target_duration_seconds: int = Field(default=25, ge=20, le=60)
+    target_duration_seconds: int = Field(default=30, ge=20, le=60)
     voice_id: Optional[str] = None
 
 
@@ -105,6 +132,28 @@ class ClosingBeat(NarrationBeat):
     )
 
 
+class MemoryDevice(BaseModel):
+    kind: MemoryDeviceKind
+    line: str = Field(min_length=1)
+    beat_id: str = Field(min_length=1)
+
+    @field_validator("line")
+    @classmethod
+    def validate_line(cls, value: str) -> str:
+        compact = " ".join(value.split())
+        if not 6 <= len(compact.split()) <= 20:
+            raise ValueError("memory-device line must contain 6-20 words")
+        return compact
+
+    @field_validator("beat_id")
+    @classmethod
+    def validate_beat_id(cls, value: str) -> str:
+        compact = value.strip()
+        if compact in {"hook", "closing"}:
+            raise ValueError("memory-device beat_id cannot reference hook or closing")
+        return compact
+
+
 class ReferenceScriptPackage(BaseModel):
     title: str
     left_item: str
@@ -115,6 +164,7 @@ class ReferenceScriptPackage(BaseModel):
     caption: str
     hashtags: list[str] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
+    memory_device: MemoryDevice
 
     @model_validator(mode="after")
     def validate_closing(self) -> "ReferenceScriptPackage":
@@ -123,6 +173,16 @@ class ReferenceScriptPackage(BaseModel):
             raise ValueError("closing must contain 2-28 words")
         if not self.closing.text.endswith((".", "!", "?")):
             raise ValueError("closing must be a complete sentence")
+        matching_beats = [beat for beat in self.beats if beat.id == self.memory_device.beat_id]
+        if len(matching_beats) != 1:
+            raise ValueError("memory-device beat_id must identify exactly one narration beat")
+        sentences = [
+            " ".join(sentence.split())
+            for sentence in re.split(r"(?<=[.!?])\s+", matching_beats[0].text.strip())
+            if sentence.strip()
+        ]
+        if self.memory_device.line not in sentences:
+            raise ValueError("memory-device line must appear as a complete sentence in its beat")
         return self
 
     @property
@@ -326,6 +386,7 @@ class RenderResult(BaseModel):
     poster_path: Path
     contact_sheet_path: Path
     timeline_path: Path
+    thumbnail_path: Optional[Path] = None
     thumbnail_timestamp_ms: Optional[int] = Field(default=None, ge=0)
     transcript_path: Optional[Path] = None
     direction_path: Optional[Path] = None
@@ -407,7 +468,8 @@ class SoundEffectCue(BaseModel):
 
 
 class CaptionCue(BaseModel):
-    words: list[str] = Field(min_length=1)
+    words: list[str] = Field(min_length=1, max_length=4)
+    slot_words: list[str] | None = Field(default=None, min_length=1, max_length=4)
     active_word_index: int = Field(ge=0)
     start: float = Field(ge=0.0)
     end: float = Field(gt=0.0)
@@ -418,13 +480,22 @@ class CaptionCue(BaseModel):
             raise ValueError("caption end must be after start")
         if self.active_word_index >= len(self.words):
             raise ValueError("active word index outside caption")
+        if self.slot_words is not None and self.slot_words[:len(self.words)] != self.words:
+            raise ValueError("caption words must be a prefix of slot words")
         return self
+
+
+class VisualEvent(BaseModel):
+    kind: VisualEventKind
+    start: float = Field(ge=0.0)
+    duration_seconds: float = Field(default=0.22, ge=0.18, le=0.25)
 
 
 class CompiledTimeline(BaseModel):
     direction_cues: list[AbsoluteDirectionCue] = Field(default_factory=list)
     sound_cues: list[SoundEffectCue] = Field(default_factory=list)
     captions: list[CaptionCue] = Field(default_factory=list)
+    visual_events: list[VisualEvent] = Field(default_factory=list)
 
 
 class CompiledVideoSpec(BaseModel):
@@ -437,6 +508,8 @@ class CompiledVideoSpec(BaseModel):
     direction_cues: list[AbsoluteDirectionCue] = Field(default_factory=list)
     sound_cues: list[SoundEffectCue] = Field(default_factory=list)
     captions: list[CaptionCue] = Field(default_factory=list)
+    visual_events: list[VisualEvent] = Field(default_factory=list)
+    memory_device: Optional[MemoryDevice] = None
     narration_end_seconds: Optional[float] = Field(default=None, ge=0.0)
     outro_duration_seconds: float = Field(default=0.0, ge=0.0)
     cta_text: str = "Like, share, follow"

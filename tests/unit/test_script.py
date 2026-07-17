@@ -18,6 +18,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
 
 
+def _selection_signals(**overrides: int) -> dict:
+    values = {
+        "common_confusion": 4,
+        "everyday_familiarity": 4,
+        "cultural_debate": 3,
+        "surprising_payoff": 4,
+        "shareability": 4,
+        "visual_feasibility": 4,
+        "research_risk": 1,
+    }
+    values.update(overrides)
+    return {
+        name: {"score": score, "reason": f"specific reason for {name}"}
+        for name, score in values.items()
+    }
+
+
 class TestTopicCandidate:
     def test_valid(self):
         tc = TopicCandidate(
@@ -147,8 +164,8 @@ class TestTopicService:
         mock_llm = MagicMock()
         mock_llm.complete_json = AsyncMock(return_value={
             "topics": [
-                {"title": "A vs B", "left": "A", "right": "B", "angle": "x", "risk_level": "low"},
-                {"title": "C vs D", "left": "C", "right": "D", "angle": "y", "risk_level": "medium"},
+                {"title": "A vs B", "left": "A", "right": "B", "angle": "x", "risk_level": "low", "selection_signals": _selection_signals()},
+                {"title": "C vs D", "left": "C", "right": "D", "angle": "y", "risk_level": "medium", "selection_signals": _selection_signals()},
             ]
         })
         svc = TopicService(llm_provider=mock_llm)
@@ -159,6 +176,10 @@ class TestTopicService:
         assert "concrete physical" in prompt
         assert "Never suggest abstract concepts" in prompt
         assert "readable paragraphs, URLs, warning labels" in prompt
+        assert "common_confusion" in prompt
+        assert "research_risk" in prompt
+        assert "zero through five" in prompt
+        assert "pair-specific reason" in prompt
 
 
 class TestScriptService:
@@ -404,9 +425,9 @@ class TestGenerateUniqueTopics:
         llm.complete_json = AsyncMock(return_value={
             "topics": [
                 {"title": "Butter vs Margarine", "left": "Butter", "right": "Margarine",
-                 "angle": "fats", "why_it_might_work": "d"},
+                 "angle": "fats", "why_it_might_work": "d", "selection_signals": _selection_signals()},
                 {"title": "Salt vs Sugar", "left": "Salt", "right": "Sugar",
-                 "angle": "taste", "why_it_might_work": "d"},
+                 "angle": "taste", "why_it_might_work": "d", "selection_signals": _selection_signals()},
             ]
         })
 
@@ -428,9 +449,9 @@ class TestGenerateUniqueTopics:
         llm.complete_json = AsyncMock(return_value={
             "topics": [
                 {"title": "Tea vs Coffee", "left": "Tea", "right": "Coffee",
-                 "angle": "caffeine", "why_it_might_work": "d"},
+                 "angle": "caffeine", "why_it_might_work": "d", "selection_signals": _selection_signals()},
                 {"title": "X vs Y", "left": "X", "right": "Y",
-                 "angle": "test", "why_it_might_work": "d"},
+                 "angle": "test", "why_it_might_work": "d", "selection_signals": _selection_signals()},
             ]
         })
 
@@ -452,9 +473,9 @@ class TestGenerateUniqueTopics:
         llm.complete_json = AsyncMock(return_value={
             "topics": [
                 {"title": "A vs B", "left": "A", "right": "B",
-                 "angle": "x", "why_it_might_work": "d"},
+                 "angle": "x", "why_it_might_work": "d", "selection_signals": _selection_signals()},
                 {"title": "B vs A", "left": "B", "right": "A",
-                 "angle": "x", "why_it_might_work": "d"},
+                 "angle": "x", "why_it_might_work": "d", "selection_signals": _selection_signals()},
             ]
         })
 
@@ -464,3 +485,44 @@ class TestGenerateUniqueTopics:
         ))
 
         assert len(candidates) == 0
+
+    def test_ranks_confusion_tension_above_model_order(self, tmp_path):
+        from app.services.topic_history import TopicHistoryService
+
+        history = TopicHistoryService(tmp_path / "history.json")
+        llm = AsyncMock()
+        llm.complete_json = AsyncMock(return_value={
+            "topics": [
+                {
+                    "title": "Frigider vs congelator",
+                    "left": "Frigider",
+                    "right": "Congelator",
+                    "angle": "Temperatură",
+                    "why_it_might_work": "Sunt aparate diferite.",
+                    "selection_signals": _selection_signals(
+                        common_confusion=1,
+                        cultural_debate=1,
+                    ),
+                },
+                {
+                    "title": "Gem vs dulceață",
+                    "left": "Gem",
+                    "right": "Dulceață",
+                    "angle": "Fructe și preparare",
+                    "why_it_might_work": "Românii folosesc des numele greșit.",
+                    "selection_signals": _selection_signals(
+                        common_confusion=5,
+                        cultural_debate=5,
+                        surprising_payoff=5,
+                        shareability=5,
+                    ),
+                },
+            ]
+        })
+
+        candidates = asyncio.run(TopicService(llm_provider=llm).generate_unique_topics(
+            history=history,
+            count=2,
+        ))
+
+        assert [item.title for item in candidates] == ["Gem vs dulceață"]

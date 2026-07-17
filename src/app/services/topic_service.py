@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from app.domain.models import TopicCandidate, TopicSpec
 from app.providers.llm.base import LLMError, LLMProvider
+from app.services.topic_selection_service import TopicSelectionService
 
 if TYPE_CHECKING:
     from app.services.topic_history import TopicHistoryService
@@ -42,6 +43,7 @@ _TOPIC_SYSTEM_PROMPT = (
 class TopicService:
     def __init__(self, llm_provider: Optional[LLMProvider] = None):
         self.llm = llm_provider
+        self.selector = TopicSelectionService()
 
     def create_manual_topic(
         self,
@@ -113,28 +115,17 @@ class TopicService:
         candidates = await self.generate_topics(
             niche=niche,
             language=language,
-            count=count * 2,
+            count=min(30, count * 2),
             previous_topics=existing_titles,
             blacklist=blacklist,
         )
 
-        existing_pairs = history.get_normalized_pairs()
-        unique: list[TopicCandidate] = []
-        for c in candidates:
-            nl = self._normalize(c.left)
-            nr = self._normalize(c.right)
-            pair_key = f"{nl}|{nr}"
-            pair_key_rev = f"{nr}|{nl}"
-            if pair_key in existing_pairs or pair_key_rev in existing_pairs:
-                logger.info(f"Filtering duplicate from history: {c.title}")
-                continue
-            used = {(self._normalize(u.left), self._normalize(u.right)) for u in unique}
-            used_rev = {(self._normalize(u.right), self._normalize(u.left)) for u in unique}
-            if (nl, nr) in used or (nl, nr) in used_rev:
-                continue
-            unique.append(c)
-            if len(unique) >= count:
-                break
+        unique = self.selector.select(
+            candidates,
+            existing_pairs=history.get_normalized_pairs(),
+            blacklist=blacklist,
+            limit=count,
+        )
 
         logger.info(
             f"Filtered to {len(unique)} unique topics "

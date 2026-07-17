@@ -279,5 +279,6 @@ class NvidiaNimProvider(BaseLLMProvider):
         schema_name: str,
         temperature: float = 0.0,
         max_tokens: int = 2048,
+        max_repair_attempts: int = 2,
     ) -> ModelT:
         raise LLMError("NVIDIA NIM is configured as a text-only provider")

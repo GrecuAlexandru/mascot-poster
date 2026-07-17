@@ -72,5 +72,6 @@ class LLMProvider:
         schema_name: str,
         temperature: float = 0.0,
         max_tokens: int = 2048,
+        max_repair_attempts: int = 2,
     ) -> ModelT:
         raise NotImplementedError

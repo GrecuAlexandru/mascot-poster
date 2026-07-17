@@ -62,11 +62,13 @@ prioritate; NU refolosi acest subiect sau aceste fapte):
     {"id": "left_gust", "text": "Are gust plin și se rumenește frumos la prăjit.", "pause_after_ms": 500, "claim_ids": ["claim_2"]},
     {"id": "right_origine", "text": "Margarina se face din uleiuri de la plante.", "pause_after_ms": 300, "claim_ids": ["claim_3"]},
     {"id": "right_textura", "text": "Rămâne moale direct de la frigider.", "pause_after_ms": 500, "claim_ids": ["claim_4"]},
+    {"id": "memory", "text": "Unul vine din lapte, celălalt pornește din plante.", "pause_after_ms": 500, "claim_ids": ["claim_1", "claim_3"]},
     {"id": "verdict", "text": "Pe scurt, unul e din lapte, celălalt din ulei.", "pause_after_ms": 750, "claim_ids": []}
   ],
   "closing": {"id": "closing", "text": "Vă pupă Pufăilă!", "pause_after_ms": 500, "claim_ids": []},
   "caption": "Unt sau margarină? Diferența e în ce sunt făcute, nu doar în preț. Tu cu ce gătești?",
   "hashtags": ["unt", "margarina", "gatit", "diferenta", "pufaila"],
+  "memory_device": {"kind": "repeatable_sentence", "line": "Unul vine din lapte, celălalt pornește din plante.", "beat_id": "memory"},
   "claims": [
     {"id": "claim_1", "text": "Untul este făcut din smântână, adică grăsime din lapte.", "supporting_source_ids": ["src_0"], "confidence": 0.95, "risk_level": "low"},
     {"id": "claim_2", "text": "Untul se rumenește la temperaturi de prăjire.", "supporting_source_ids": ["src_1"], "confidence": 0.8, "risk_level": "low"},
@@ -78,6 +80,20 @@ Observă: hook-ul spune întrebarea fixă; două caracteristici pentru stânga �
 (simetrie); verdictul începe cu «Pe scurt,» și nu aduce nimic nou; closing e doar semnătura;
 fiecare afirmație factuală are un claim legat prin claim_ids; tot textul are diacritice corecte și
 cuvinte simple («uleiuri de la plante» în beat, nu «uleiuri vegetale rafinate»)."""
+
+
+_SCRIPT_MEMORY_DEVICE_GUIDE = """
+
+MEMORY DEVICE:
+- Return exactly one memory_device object with kind, line, and beat_id.
+- kind must be exactly one of: analogy, surprising_correction, humorous_contrast, repeatable_sentence.
+- Put the exact 6-20 word line as a complete sentence in one dedicated non-hook, non-closing beat.
+- The referenced beat must use claim_ids for every factual idea in the line.
+- The line must not add an unsupported fact, measurement, health claim, safety claim, financial claim,
+  or causal claim. Prefer a simple non-quantitative comparison grounded only in the supplied facts.
+- structural example only: «Frigiderul pune mâncarea pe pauză; congelatorul aproape oprește filmul.»
+  Never copy this example, its subject, or its facts into another topic.
+"""
 
 
 _SCRIPT_TTS_RULES = """
@@ -151,7 +167,6 @@ class ReferenceScriptService:
     ) -> ReferenceScriptPackage:
         facts = "\n".join(f"- {fact.text}" for fact in research.facts) or "- Fără fapte suplimentare"
         language_name = "română" if language == "ro" else "English"
-        word_budget = target_duration_seconds * 2
         left = topic.comparison_left
         right = topic.comparison_right
         if language == "en":
@@ -183,7 +198,8 @@ class ReferenceScriptService:
         user = (
             f"Scrie în {language_name}. Topic: {topic.title}. "
             f"Stânga: {left}. Dreapta: {right}. "
-            f"Țintă: {target_duration_seconds} secunde (buget maxim {word_budget} cuvinte vorbite în total). "
+            f"Țintă orientativă: {target_duration_seconds} secunde; this is an approximate pacing target, "
+            "not a strict duration gate. "
             f"{dialogue_style}"
             + _SCRIPT_STRUCTURE_GUIDE
             + "\n\nREGULI DE STRUCTURĂ ȘI RITM:\n"
@@ -202,9 +218,9 @@ class ReferenceScriptService:
             "Adaugă separat closing cu id exact closing, iar textul lui trebuie să fie doar semnătura cerută. "
             f"Textul closing trebuie să fie exact «{signoff_line}», ca semnătură a "
             f"personajului {MASCOT_NAME}. Pune pause_after_ms 500 la closing. "
-            f"Textul vorbit total trebuie să aibă cel mult {word_budget} cuvinte. "
             + _SCRIPT_TTS_RULES
             + (_SCRIPT_LANGUAGE_RULES if language == "ro" else "")
+            + _SCRIPT_MEMORY_DEVICE_GUIDE
             + _SCRIPT_CLAIMS_CAPTION_GUIDE
             + "\n\nNu inventa fapte în afara listei. "
             "Dacă reparațiile cer eliminarea unei afirmații, elimină complet beat-ul și claim-ul "
@@ -221,7 +237,7 @@ class ReferenceScriptService:
             ReferenceScriptPackage,
             schema_name="reference_script",
             temperature=0.35,
-            max_tokens=2800,
+            max_tokens=5000,
         )
         script = self._enforce_bookends(
             result,
@@ -243,7 +259,7 @@ class ReferenceScriptService:
         summary_prefix: str,
     ) -> ReferenceScriptPackage:
         beats = list(result.beats)
-        if beats and beats[0].text.strip() == opening_line:
+        if beats and beats[0].text.strip().casefold() == opening_line.casefold():
             beats[0] = beats[0].model_copy(update={
                 "id": "hook",
                 "text": opening_line,

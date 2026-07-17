@@ -58,13 +58,29 @@ def main() -> None:
         str(audio),
     ], check=True, capture_output=True)
     transcript = TimedTranscript(
-        words=[TimedWord(word="Concluzie.", start=0.0, end=21.5)],
-        beats=[TimedBeat(id="closing", start=0.0, end=21.5, pause_end=22.0)],
+        words=[
+            TimedWord(word="Avem", start=0.0, end=0.3),
+            TimedWord(word="zarzără", start=0.3, end=0.8),
+            TimedWord(word="turcească", start=0.8, end=1.2),
+            TimedWord(word="și", start=1.2, end=1.35),
+            TimedWord(word="avem", start=1.35, end=1.65),
+            TimedWord(word="corcodușă", start=1.65, end=2.2),
+            TimedWord(word="românească.", start=2.2, end=2.8),
+            TimedWord(word="Dar", start=2.9, end=3.15),
+            TimedWord(word="care", start=3.15, end=3.4),
+            TimedWord(word="e", start=3.4, end=3.5),
+            TimedWord(word="diferența?", start=3.5, end=4.1),
+            TimedWord(word="Concluzie.", start=4.5, end=21.5),
+        ],
+        beats=[
+            TimedBeat(id="hook", start=0.0, end=4.1, pause_end=4.5),
+            TimedBeat(id="closing", start=4.5, end=21.5, pause_end=22.0),
+        ],
         duration_seconds=22.0,
     )
     spec = CompiledVideoSpec(
-        left_label="Left",
-        right_label="Right",
+        left_label="Zarzără turcească",
+        right_label="Corcodușă românească",
         left_image=left,
         right_image=right,
         narration_audio=audio,

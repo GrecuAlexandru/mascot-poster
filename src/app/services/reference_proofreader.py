@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field
 
 from app.domain.models import ReferenceScriptPackage, TopicSpec
@@ -86,10 +88,28 @@ class ReferenceProofreader:
             beat.model_copy(update={"text": corrected.get(f"beat::{beat.id}", beat.text)})
             for beat in script.beats
         ]
-        return script.model_copy(update={
-            "beats": beats,
-            "caption": corrected.get("caption::", script.caption),
-        })
+        original_beat = next(beat for beat in script.beats if beat.id == script.memory_device.beat_id)
+        fixed_beat = next(beat for beat in beats if beat.id == script.memory_device.beat_id)
+        original_sentences = self._sentences(original_beat.text)
+        fixed_sentences = self._sentences(fixed_beat.text)
+        try:
+            memory_index = original_sentences.index(script.memory_device.line)
+            fixed_line = fixed_sentences[memory_index]
+            payload = script.model_dump()
+            payload["beats"] = [beat.model_dump() for beat in beats]
+            payload["caption"] = corrected.get("caption::", script.caption)
+            payload["memory_device"]["line"] = fixed_line
+            return ReferenceScriptPackage.model_validate(payload)
+        except (ValueError, IndexError):
+            return script
+
+    @staticmethod
+    def _sentences(text: str) -> list[str]:
+        return [
+            " ".join(sentence.split())
+            for sentence in re.split(r"(?<=[.!?])\s+", text.strip())
+            if sentence.strip()
+        ]
 
     async def correct_topic(self, topic: TopicSpec) -> TopicSpec:
         items = {

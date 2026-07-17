@@ -22,6 +22,19 @@ class SfxKind(str, Enum):
     CTA_STING = "cta_sting"
 
 
+class VisualEventKind(str, Enum):
+    REVEAL_LEFT = "reveal_left"
+    REVEAL_RIGHT = "reveal_right"
+    SHOW_BOTH = "show_both"
+
+
+class MemoryDeviceKind(str, Enum):
+    ANALOGY = "analogy"
+    SURPRISING_CORRECTION = "surprising_correction"
+    HUMOROUS_CONTRAST = "humorous_contrast"
+    REPEATABLE_SENTENCE = "repeatable_sentence"
+
+
 class ImageMotion(str, Enum):
     NONE = "none"
     SLOW_ZOOM_IN = "slow_zoom_in"

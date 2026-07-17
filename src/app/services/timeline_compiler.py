@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from app.domain.enums import Focus, MascotAnchor, MascotPose, SfxKind
+from app.domain.enums import Focus, MascotAnchor, MascotPose, SfxKind, VisualEventKind
 from app.domain.models import (
     AbsoluteDirectionCue,
     CaptionCue,
     CompiledTimeline,
+    DirectionCue,
     DirectionPlan,
     SoundEffectCue,
     TimedTranscript,
+    VisualEvent,
 )
 
 
@@ -15,7 +17,7 @@ class TimelineCompiler:
     def __init__(
         self,
         max_caption_words: int = 4,
-        max_caption_characters: int = 26,
+        max_caption_characters: int = 24,
         reset_gap_seconds: float = 0.3,
         sfx_debounce_seconds: float = 0.6,
     ):
@@ -47,7 +49,8 @@ class TimelineCompiler:
                 )
                 end = max(word.end, next_start)
                 result.append(CaptionCue(
-                    words=group_words,
+                    words=group_words[:position + 1],
+                    slot_words=group_words,
                     active_word_index=position,
                     start=word.start,
                     end=end,
@@ -78,6 +81,7 @@ class TimelineCompiler:
     ) -> CompiledTimeline:
         words_by_beat = self._words_by_beat(transcript)
         absolute_cues: list[AbsoluteDirectionCue] = []
+        resolved_cues: list[tuple[DirectionCue, AbsoluteDirectionCue]] = []
         for cue in direction.cues:
             beat_words = words_by_beat.get(cue.beat_id)
             if beat_words is None:
@@ -86,13 +90,16 @@ class TimelineCompiler:
                 raise ValueError(
                     f"word_index {cue.word_index} outside beat '{cue.beat_id}'"
                 )
-            absolute_cues.append(AbsoluteDirectionCue(
+            absolute_cue = AbsoluteDirectionCue(
                 start=beat_words[cue.word_index].start,
                 mascot_pose=cue.mascot_pose,
                 mascot_anchor=cue.mascot_anchor,
                 product_focus=cue.product_focus,
                 sfx_kind=cue.sfx_kind,
-            ))
+            )
+            absolute_cues.append(absolute_cue)
+            resolved_cues.append((cue, absolute_cue))
+        visual_events = self._visual_events(resolved_cues, transcript)
         absolute_cues.sort(key=lambda cue: cue.start)
         closing_start = next(
             (beat.start for beat in transcript.beats if beat.id == "closing"),
@@ -123,7 +130,55 @@ class TimelineCompiler:
         return CompiledTimeline(
             direction_cues=absolute_cues,
             sound_cues=sound_cues,
+            visual_events=visual_events,
         )
+
+    @staticmethod
+    def _visual_events(
+        resolved_cues: list[tuple[DirectionCue, AbsoluteDirectionCue]],
+        transcript: TimedTranscript,
+    ) -> list[VisualEvent]:
+        sequence = [
+            (Focus.LEFT, VisualEventKind.REVEAL_LEFT),
+            (Focus.RIGHT, VisualEventKind.REVEAL_RIGHT),
+            (Focus.BOTH, VisualEventKind.SHOW_BOTH),
+        ]
+        selected: list[VisualEvent] = []
+        minimum_start = -1.0
+        for focus, kind in sequence:
+            match = next(
+                (
+                    absolute
+                    for source, absolute in resolved_cues
+                    if source.beat_id == "hook"
+                    and absolute.product_focus == focus
+                    and absolute.start > minimum_start
+                ),
+                None,
+            )
+            if match is None:
+                return TimelineCompiler._fallback_visual_events(transcript)
+            selected.append(VisualEvent(kind=kind, start=match.start))
+            minimum_start = match.start
+        return selected
+
+    @staticmethod
+    def _fallback_visual_events(transcript: TimedTranscript) -> list[VisualEvent]:
+        hook = next(
+            (beat for beat in transcript.beats if beat.id == "hook"),
+            transcript.beats[0] if transcript.beats else None,
+        )
+        lower = hook.start if hook is not None else 0.0
+        upper = hook.end if hook is not None else transcript.duration_seconds
+        starts = [min(max(value, lower), upper) for value in (0.0, 1.2, 2.0)]
+        starts[1] = max(starts[0], starts[1])
+        starts[2] = max(starts[1], starts[2])
+        kinds = [
+            VisualEventKind.REVEAL_LEFT,
+            VisualEventKind.REVEAL_RIGHT,
+            VisualEventKind.SHOW_BOTH,
+        ]
+        return [VisualEvent(kind=kind, start=start) for kind, start in zip(kinds, starts)]
 
     def _starts_new_caption(self, current_words: list[str], previous, word) -> bool:
         if not current_words or previous is None:

@@ -15,6 +15,7 @@ from app.domain.models import (
     VerificationResult,
 )
 from app.services.research_service import ResearchService
+from app.services.topic_selection_service import TopicSelectionService
 
 
 _TOPIC_SYSTEM_PROMPT = (
@@ -25,11 +26,20 @@ _TOPIC_SYSTEM_PROMPT = (
     "one in turn, karaoke captions flash the key words, and a narrator answers a single question "
     "in about 20 to 30 seconds: 'care e diferenta?'. There is no b-roll, no diagram, no screen "
     "recording, no chart. The entire video is two photographs and a talking mascot. Your only job "
-    "in this step is to invent ONE comparison topic that this exact template can actually shoot "
-    "and explain. Return structured JSON only, no prose around it."
+    "in this step is to invent a candidate pool that this exact template can actually shoot and "
+    "explain. Return structured JSON only, no prose around it."
 )
 
-_TOPIC_INSTRUCTIONS = """Your task: invent ONE fresh comparison topic for the next episode.
+_TOPIC_INSTRUCTIONS = """Your task: invent exactly six fresh comparison candidates for the next episode.
+The application scores and ranks them, so make them genuinely different alternatives instead of
+putting one favorite first.
+
+PRIMARY EDITORIAL RULE: CONFUSION TENSION
+A strong topic begins with a mistake, disagreement, or misconception people already have. Prefer
+names used interchangeably, mistaken identities, Romanian regional or household disagreements,
+familiar myths, and distinctions viewers would send to a friend to settle an argument. Reject
+obvious-category pairs whose answer nearly everyone already understands. Two objects merely being
+different is not enough.
 
 WHY THIS TEMPLATE IS SO PICKY
 Because the whole video is just two isolated product photos plus a narrator, a topic
@@ -102,6 +112,16 @@ FIELD-BY-FIELD GUIDE
 - risk_level: 'low' for harmless everyday items; 'medium' when a claim touches health, money, or
   safety and must be worded carefully; 'high' only when it is easy to state something harmful.
   Prefer low and medium; avoid high.
+- selection_signals: all seven signals below. Each contains an integer score from zero through five
+  and a concise, pair-specific reason. Zero means absent, three means meaningful, and five means
+  unusually strong. Generic praise such as 'this is engaging' is invalid.
+  - common_confusion: how often people confuse the names, identities, meanings, or uses.
+  - everyday_familiarity: how recognizable and relevant the pair is in ordinary Romanian life.
+  - cultural_debate: strength of regional, linguistic, household, or cultural disagreement.
+  - surprising_payoff: strength of the factual correction or reveal.
+  - shareability: likelihood of sending it to someone or using it to settle a disagreement.
+  - visual_feasibility: how clearly two still images and short labels establish the comparison.
+  - research_risk: difficulty and potential harm of stating the distinction correctly. Higher is worse.
 
 DIACRITICE ȘI LIMBAJ (very important — the output is Romanian):
 Write title, left, right, angle, and why_it_might_work in flawless Romanian with correct diacritics
@@ -110,18 +130,31 @@ Romanian form of the object. Examples of mistakes to avoid: write 'Pâine la tav
 tava'; 'brânză', not 'branza'; 'pâine', not 'paine'; 'ouă', not 'oua'. Use simple, everyday words
 anyone would understand, not technical or fancy terms.
 
-WORKED EXAMPLE (shape and tone only, do not reuse the pair; note the correct diacritics)
+WORKED EXAMPLE (shape and tone only, do not reuse the pair; return six entries, not one)
 {
-  "title": "Miere cristalizată vs miere lichidă",
-  "left": "Miere cristalizată",
-  "right": "Miere lichidă",
-  "angle": "Sunt exact aceeași miere, doar în stări diferite. Cristalizarea e un proces natural, nu un semn că mierea s-a stricat, și depinde de raportul dintre glucoză și fructoză. Arătăm de ce se întâmplă și cum readuci mierea la starea lichidă fără s-o supraîncălzești.",
-  "why_it_might_work": "Mulți aruncă borcanul cristalizat crezând că e stricat, așa că demontăm un mit auzit de aproape toată lumea.",
-  "risk_level": "low"
+  "topics": [
+    {
+      "title": "Miere cristalizată vs miere lichidă",
+      "left": "Miere cristalizată",
+      "right": "Miere lichidă",
+      "angle": "Sunt aceeași miere în stări diferite. Cristalizarea este naturală, nu un semn că mierea s-a stricat.",
+      "why_it_might_work": "Mulți aruncă borcanul cristalizat crezând că este stricat.",
+      "risk_level": "low",
+      "selection_signals": {
+        "common_confusion": {"score": 5, "reason": "Mulți confundă cristalizarea cu alterarea."},
+        "everyday_familiarity": {"score": 5, "reason": "Mierea este prezentă în multe gospodării românești."},
+        "cultural_debate": {"score": 3, "reason": "Părerile despre mierea cristalizată diferă între familii."},
+        "surprising_payoff": {"score": 5, "reason": "Răspunsul răstoarnă mitul că borcanul s-a stricat."},
+        "shareability": {"score": 5, "reason": "Explicația poate opri pe cineva să arunce mierea."},
+        "visual_feasibility": {"score": 5, "reason": "Cele două stări se văd clar în borcane alăturate."},
+        "research_risk": {"score": 1, "reason": "Procesul este bine documentat și cu risc redus."}
+      }
+    }
+  ]
 }
 
-Return exactly one topic as JSON with that structure. Pick a pair that is unmistakably
-different on camera AND unmistakably different in fact."""
+Return one JSON object containing exactly six topics. Every candidate must include all seven
+selection signals and must be clearly representable and factually distinct."""
 
 
 _RESEARCH_SYSTEM_PROMPT = (
@@ -204,6 +237,10 @@ class ReferenceResearchSummary(BaseModel):
     safety_notes: list[str] = Field(default_factory=list, max_length=3)
 
 
+class ReferenceTopicPool(BaseModel):
+    topics: list[TopicCandidate] = Field(min_length=1, max_length=6)
+
+
 class ReferenceTopicGenerator:
     def __init__(
         self,
@@ -214,6 +251,7 @@ class ReferenceTopicGenerator:
         self.llm = llm
         self.history = history
         self.proofreader = proofreader
+        self.selector = TopicSelectionService()
 
     async def generate(self, request) -> TopicSpec:
         if request.topic_override:
@@ -221,18 +259,51 @@ class ReferenceTopicGenerator:
         previous_topics = []
         if self.history is not None:
             previous_topics = self.history.get_topic_titles()
-        candidate = await self.llm.complete_structured(
-            _TOPIC_SYSTEM_PROMPT,
+        prompt = (
             _TOPIC_INSTRUCTIONS
             + "\n\nRECENT HISTORY TO AVOID (never repeat, rephrase, or lightly disguise any of "
             "these pairs; choose a genuinely different comparison and, ideally, a different "
             "domain):\n"
-            + ("; ".join(previous_topics[:30]) or "(gol - no episodes published yet)"),
-            TopicCandidate,
+            + ("; ".join(previous_topics[:30]) or "(gol - no episodes published yet)")
+        )
+        pool = await self.llm.complete_structured(
+            _TOPIC_SYSTEM_PROMPT,
+            prompt,
+            ReferenceTopicPool,
             schema_name="reference_topic",
             temperature=0.65,
-            max_tokens=900,
+            max_tokens=4800,
         )
+        existing_pairs = self._existing_pairs()
+        selected = self.selector.select(
+            pool.topics,
+            existing_pairs=existing_pairs,
+            limit=1,
+        )
+        if not selected:
+            rejection_notes = self._rejection_notes(pool.topics)
+            repaired = await self.llm.complete_structured(
+                _TOPIC_SYSTEM_PROMPT,
+                prompt
+                + "\n\nREPAIR THE CANDIDATE POOL. Every previous candidate was rejected. "
+                "Clear these exact failures and return new, unrelated pairs:\n"
+                + rejection_notes,
+                ReferenceTopicPool,
+                schema_name="reference_topic_repair",
+                temperature=0.0,
+                max_tokens=4800,
+            )
+            selected = self.selector.select(
+                repaired.topics,
+                existing_pairs=existing_pairs,
+                limit=1,
+            )
+            if not selected:
+                raise RuntimeError(
+                    "No eligible confusion-tension topic after repair: "
+                    + self._rejection_notes(repaired.topics)
+                )
+        candidate = selected[0]
         topic = TopicSpec(
             title=candidate.title,
             comparison_left=candidate.left,
@@ -244,6 +315,20 @@ class ReferenceTopicGenerator:
         if self.history is not None:
             self.history.add_from_topic(topic)
         return topic
+
+    def _existing_pairs(self) -> set[str]:
+        if self.history is None:
+            return set()
+        getter = getattr(self.history, "get_normalized_pairs", None)
+        return set(getter()) if callable(getter) else set()
+
+    def _rejection_notes(self, candidates: list[TopicCandidate]) -> str:
+        notes: list[str] = []
+        for candidate in candidates:
+            decision = self.selector.evaluate(candidate)
+            reasons = decision.reasons or ("duplicate or excluded by history",)
+            notes.append(f"- {candidate.title}: {', '.join(reasons)}")
+        return "\n".join(notes) or "- no structurally valid candidates"
 
     @staticmethod
     def _parse_override(value: str) -> TopicSpec:

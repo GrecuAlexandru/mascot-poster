@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 logger = logging.getLogger(__name__)
 
 from app.domain.models import (
@@ -183,6 +185,7 @@ class VideoGenerationService:
                 paired_image_brief_path = job_dir / "paired_image_brief.json"
                 if not paired_image_brief_path.exists():
                     paired_image_brief_path = None
+                self._ensure_pair_validation_available(paired_image_brief_path)
             else:
                 assets_dir = job_dir / "assets"
                 assets_dir.mkdir(parents=True, exist_ok=True)
@@ -191,6 +194,7 @@ class VideoGenerationService:
                 if self.image_brief_service is not None:
                     await self._announce(progress_callback, "image_brief")
                     paired_brief = await self.image_brief_service.generate(topic, research)
+                    self._ensure_pair_validation_available(paired_brief)
                     paired_image_brief_path = job_dir / "paired_image_brief.json"
                     paired_image_brief_path.write_text(
                         paired_brief.model_dump_json(indent=2),
@@ -232,10 +236,10 @@ class VideoGenerationService:
                             right_provenance,
                             pair_validation,
                             pair_repair,
-                        ) = await self._repair_pair_once(
-                                topic,
-                                left_image,
-                                right_image,
+                        ) = await self._repair_pair_until_stable(
+                            topic,
+                            left_image,
+                            right_image,
                                 paired_brief,
                                 initial_pair_validation,
                                 left_provenance,
@@ -248,6 +252,11 @@ class VideoGenerationService:
                             + "; ".join(failure_reasons)
                         )
                     pair_warnings = list(pair_validation.warning_reasons)
+                    if pair_validation.confidence < 0.8:
+                        pair_warnings.append(
+                            "Paired image identity confidence is "
+                            f"{pair_validation.confidence:.2f}"
+                        )
                     if not pair_validation.pair_style_acceptable:
                         pair_warnings.append("Residual photographic style mismatch")
                     if not pair_validation.composition_acceptable:
@@ -261,6 +270,7 @@ class VideoGenerationService:
                         "initial_pair_validation": _CheckpointStore._serialize(initial_pair_validation),
                         "pair_repair": _CheckpointStore._serialize(pair_repair),
                         "pair_warnings": pair_warnings,
+                        "pair_validation_required": paired_brief is not None,
                     }, indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
@@ -274,10 +284,9 @@ class VideoGenerationService:
 
             stage = "script_verification"
             await self._announce(progress_callback, stage)
-            if checkpoint.completed(stage):
-                payload = checkpoint.load(stage)
-                script = ReferenceScriptPackage.model_validate(payload["script"])
-                verification = VerificationResult.model_validate(payload["verification"])
+            loaded_script = self._load_script_checkpoint(checkpoint)
+            if loaded_script is not None:
+                script, verification = loaded_script
             else:
                 script, verification = await self._generate_verified_script(
                     topic,
@@ -290,54 +299,19 @@ class VideoGenerationService:
             stage = "direction_tts"
             await self._announce(progress_callback, stage)
             if checkpoint.completed(stage):
-                existing = checkpoint.load(stage)
-                existing_transcript = TimedTranscript.model_validate(existing["transcript"])
-                if not self._duration_is_acceptable(existing_transcript.duration_seconds):
-                    checkpoint.invalidate(["direction_tts", "compiled", "render", "quality"])
-            if checkpoint.completed(stage):
                 payload = checkpoint.load(stage)
                 direction = DirectionPlan.model_validate(payload["direction"])
                 transcript = TimedTranscript.model_validate(payload["transcript"])
                 narration_audio = Path(payload["narration_audio"])
             else:
                 audio_dir = job_dir / "audio"
-                narration_audio: Path | None = None
-                transcript: TimedTranscript | None = None
-                for attempt in range(3):
-                    if script.word_count > self._word_budget(request):
-                        script, verification = await self._generate_verified_script(
-                            topic,
-                            research,
-                            request,
-                            [
-                                f"Narration has {script.word_count} spoken words. Reduce it to at most "
-                                f"{self._word_budget(request)} spoken words.",
-                            ],
-                        )
-                    narration_audio, transcript = await self.beat_tts.synthesize(
-                        script,
-                        request.voice_id or "",
-                        request.language,
-                        audio_dir,
-                        settings=TTSSettings(speed=1.05),
-                    )
-                    if self._duration_is_acceptable(transcript.duration_seconds):
-                        break
-                    if attempt == 2:
-                        break
-                    script, verification = await self._generate_verified_script(
-                        topic,
-                        research,
-                        request,
-                        [self._duration_repair_note(transcript.duration_seconds, request)],
-                    )
-                if narration_audio is None or transcript is None:
-                    raise RuntimeError("Narration synthesis did not return timing data")
-                if not self._duration_is_acceptable(transcript.duration_seconds):
-                    raise RuntimeError(
-                        "Narration duration could not be repaired into the 20-60 second range: "
-                        f"{transcript.duration_seconds:.1f}s"
-                    )
+                narration_audio, transcript = await self.beat_tts.synthesize(
+                    script,
+                    request.voice_id or "",
+                    request.language,
+                    audio_dir,
+                    settings=TTSSettings(speed=0.92),
+                )
                 direction = await self.director.generate(script, request.language)
                 checkpoint.save("script_verification", {"script": script, "verification": verification})
                 checkpoint.save(stage, {
@@ -416,6 +390,8 @@ class VideoGenerationService:
                     direction_cues=timeline.direction_cues,
                     sound_cues=timeline.sound_cues,
                     captions=timeline.captions,
+                    visual_events=timeline.visual_events,
+                    memory_device=script.memory_device,
                     cta_text="Like, share, follow",
                 )
                 checkpoint.save(stage, compiled)
@@ -583,6 +559,43 @@ class VideoGenerationService:
         )
         return left_provenance, right_provenance, pair_validation, metadata
 
+    async def _repair_pair_until_stable(
+        self,
+        topic: TopicSpec,
+        left_path: Path,
+        right_path: Path,
+        brief: Any,
+        validation: Any,
+        left_provenance: Any,
+        right_provenance: Any,
+        max_attempts: int = 2,
+    ) -> tuple[Any, Any, Any, list[dict[str, Any]]]:
+        current = validation
+        repairs: list[dict[str, Any]] = []
+        for attempt in range(1, max_attempts + 1):
+            if not current.needs_repair:
+                break
+            (
+                left_provenance,
+                right_provenance,
+                current,
+                metadata,
+            ) = await self._repair_pair_once(
+                topic,
+                left_path,
+                right_path,
+                brief,
+                current,
+                left_provenance,
+                right_provenance,
+            )
+            repairs.append({"attempt": attempt, **metadata})
+        return left_provenance, right_provenance, current, repairs
+
+    def _ensure_pair_validation_available(self, paired_brief: Any) -> None:
+        if paired_brief is not None and self.image_validator is None:
+            raise RuntimeError("Paired image validation is required")
+
     @staticmethod
     def _pair_failure_reasons(validation: Any) -> list[str]:
         if not validation.has_fatal_issues:
@@ -606,9 +619,7 @@ class VideoGenerationService:
             reasons.append("Image background is unusable")
         if not validation.realism_acceptable:
             reasons.append("Image is not plausibly photorealistic")
-        if validation.confidence < 0.8:
-            reasons.append("Image identity validation confidence is too low")
-        return reasons or ["Fatal paired image validation failure"]
+        return reasons
 
     async def _generate_verified_script(
         self,
@@ -643,25 +654,27 @@ class VideoGenerationService:
         return script, verification
 
     @staticmethod
-    def _word_budget(request: GenerationRequest) -> int:
-        return request.target_duration_seconds * 2
-
-    @staticmethod
-    def _duration_is_acceptable(duration_seconds: float) -> bool:
-        return 20.0 <= duration_seconds <= 60.0
-
-    @classmethod
-    def _duration_repair_note(
-        cls,
-        duration_seconds: float,
-        request: GenerationRequest,
-    ) -> str:
-        action = "Shorten" if duration_seconds > 30.0 else "Expand"
-        return (
-            f"Measured narration duration was {duration_seconds:.1f}s. {action} the spoken text "
-            f"to target {request.target_duration_seconds}s and stay within 20-60 seconds. "
-            f"Use at most {cls._word_budget(request)} spoken words."
-        )
+    def _load_script_checkpoint(
+        checkpoint: _CheckpointStore,
+    ) -> tuple[ReferenceScriptPackage, VerificationResult] | None:
+        if not checkpoint.completed("script_verification"):
+            return None
+        payload = checkpoint.load("script_verification")
+        try:
+            return (
+                ReferenceScriptPackage.model_validate(payload["script"]),
+                VerificationResult.model_validate(payload["verification"]),
+            )
+        except (KeyError, ValidationError):
+            checkpoint.invalidate([
+                "script_verification",
+                "direction_tts",
+                "social_description",
+                "compiled",
+                "render",
+                "quality",
+            ])
+            return None
 
     @staticmethod
     async def _announce(callback: Optional[Callable[[str], Any]], stage: str) -> None:

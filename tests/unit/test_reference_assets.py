@@ -26,6 +26,7 @@ from app.services.reference_image_service import ReferenceImageService
 from app.services.reference_image_brief_service import ReferenceImageBriefService
 from app.services.reference_image_validator import ImageValidationResult, ReferenceImageValidator
 from app.providers.llm.openai_provider import LLMProvider
+import app.providers.llm.openai_provider as openai_llm_module
 from app.services.mascot_asset_preparer import MascotAssetPreparer
 from app.services.mascot_service import MascotService
 from app.services.sfx_service import SfxLibraryService
@@ -220,6 +221,8 @@ def test_generated_prompt_contains_identity_pair_style_and_negatives() -> None:
     assert "no checkerboard" in prompt
     assert "transparent background" not in prompt
     assert "transparent PNG" not in prompt
+    assert "85 to 92 percent" in prompt
+    assert "targeting 88 percent" in prompt
 
 
 def test_generated_prompt_requires_an_upright_centered_subject() -> None:
@@ -446,6 +449,64 @@ def test_multimodal_request_contains_png_data_url(tmp_path: Path) -> None:
     assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_multimodal_structured_completion_repairs_truncated_json(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    image_path = tmp_path / "candidate.png"
+    Image.new("RGBA", (32, 32), "white").save(image_path)
+    valid = ImageValidationResult(
+        depicts_requested_item=True,
+        distinguishing_attributes_present=True,
+        contains_logo_or_prominent_text=False,
+        contains_prohibited_content=False,
+        background_acceptable=True,
+        confidence=0.95,
+    ).model_dump_json()
+
+    class Client:
+        bodies: list[dict] = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return None
+
+        async def post(self, url, headers, json):
+            self.bodies.append(json)
+            content = '{"depicts_requested_item":true,"warning_reasons":[' if len(self.bodies) == 1 else valid
+            finish_reason = "length" if len(self.bodies) == 1 else "stop"
+            return httpx.Response(
+                200,
+                json={
+                    "model": "google/gemini-2.5-flash-lite",
+                    "choices": [{"finish_reason": finish_reason, "message": {"content": content}}],
+                    "usage": {"prompt_tokens": 20, "completion_tokens": 30},
+                },
+            )
+
+    monkeypatch.setattr(openai_llm_module.httpx, "AsyncClient", lambda **kwargs: Client())
+    provider = LLMProvider(api_key="test", model="google/gemini-2.5-flash-lite")
+
+    result = asyncio.run(provider.complete_structured_with_images(
+        "system",
+        "validate pair",
+        [image_path],
+        ImageValidationResult,
+        schema_name="paired_image_validation",
+        max_tokens=2400,
+        max_repair_attempts=1,
+    ))
+
+    assert result.accepted
+    assert len(Client.bodies) == 2
+    assert Client.bodies[0]["max_tokens"] == 2400
+    assert Client.bodies[1]["max_tokens"] == 2400
+    assert "Previous invalid response" in Client.bodies[1]["messages"][1]["content"][0]["text"]
+    assert Client.bodies[0]["messages"][1]["content"][1]["image_url"] == Client.bodies[1]["messages"][1]["content"][1]["image_url"]
+
+
 def test_pair_validator_uses_white_mattes_for_transparent_images(tmp_path: Path) -> None:
     left = tmp_path / "left.png"
     right = tmp_path / "right.png"
@@ -456,12 +517,15 @@ def test_pair_validator_uses_white_mattes_for_transparent_images(tmp_path: Path)
         def __init__(self) -> None:
             self.inspection_pixels = []
             self.instruction = ""
+            self.kwargs = {}
 
         async def complete_structured_with_images(self, system, user, paths, model_type, **kwargs):
             self.instruction = user
+            self.kwargs = kwargs
+            sheet = Image.open(paths[0]).convert("RGBA")
             self.inspection_pixels = [
-                Image.open(path).convert("RGBA").getpixel((0, 0))
-                for path in paths
+                sheet.getpixel((0, 0)),
+                sheet.getpixel((sheet.width - 1, 0)),
             ]
             return ImageValidationResult(
                 depicts_requested_item=True,
@@ -484,7 +548,99 @@ def test_pair_validator_uses_white_mattes_for_transparent_images(tmp_path: Path)
     assert llm.inspection_pixels == [(255, 255, 255, 255), (255, 255, 255, 255)]
     assert "Do not reject an image merely because" in llm.instruction
     assert "atmospheric cue such as steam" in llm.instruction
+    assert llm.kwargs["max_tokens"] == 2400
+    assert llm.kwargs["max_repair_attempts"] == 2
     assert Image.open(left).convert("RGBA").getpixel((0, 0))[3] == 0
+
+
+def test_pair_validator_locks_sides_into_one_contact_sheet(tmp_path: Path) -> None:
+    left = tmp_path / "left.png"
+    right = tmp_path / "right.png"
+    Image.new("RGB", (32, 32), (220, 20, 20)).save(left)
+    Image.new("RGB", (32, 32), (20, 20, 220)).save(right)
+
+    class LLM:
+        def __init__(self) -> None:
+            self.path_count = 0
+            self.left_pixel = None
+            self.right_pixel = None
+            self.instruction = ""
+
+        async def complete_structured_with_images(self, system, user, paths, model_type, **kwargs):
+            self.path_count = len(paths)
+            self.instruction = user
+            sheet = Image.open(paths[0]).convert("RGB")
+            self.left_pixel = sheet.getpixel((16, 16))
+            if sheet.width >= 64:
+                self.right_pixel = sheet.getpixel((48, 16))
+            return ImageValidationResult(
+                depicts_requested_item=True,
+                distinguishing_attributes_present=True,
+                contains_logo_or_prominent_text=False,
+                contains_prohibited_content=False,
+                background_acceptable=True,
+                confidence=0.95,
+            )
+
+    llm = LLM()
+    result = asyncio.run(ReferenceImageValidator(llm).validate_pair(
+        left,
+        right,
+        _bread_image_brief(),
+    ))
+
+    assert result.accepted
+    assert llm.path_count == 1
+    assert llm.left_pixel == (220, 20, 20)
+    assert llm.right_pixel == (20, 20, 220)
+    assert "LEFT HALF" in llm.instruction
+    assert "RIGHT HALF" in llm.instruction
+
+
+def test_pair_validator_treats_sealed_frozen_produce_as_frozen_packages(tmp_path: Path) -> None:
+    left = tmp_path / "left.png"
+    right = tmp_path / "right.png"
+    Image.new("RGB", (32, 32), "white").save(left)
+    Image.new("RGB", (32, 32), "white").save(right)
+    brief = PairedImageBrief(
+        shared_style="matching open appliance photos on white",
+        left=ProductImageBrief(
+            item="Frigider",
+            exact_subject="open refrigerator with shelves and crisper drawers",
+            distinguishing_attributes=["open shelves", "crisper drawers"],
+        ),
+        right=ProductImageBrief(
+            item="Congelator",
+            exact_subject="open freezer with drawers and frozen packages",
+            distinguishing_attributes=["stacked drawers", "sealed frozen-food bags"],
+            prohibited_elements=[
+                "loose unpackaged fruit and vegetables displayed on open refrigerator shelves"
+            ],
+            allow_packaging=True,
+        ),
+    )
+
+    class LLM:
+        def __init__(self) -> None:
+            self.instruction = ""
+
+        async def complete_structured_with_images(self, system, user, paths, model_type, **kwargs):
+            self.instruction = user
+            return ImageValidationResult(
+                depicts_requested_item=True,
+                distinguishing_attributes_present=True,
+                contains_logo_or_prominent_text=False,
+                contains_prohibited_content=False,
+                background_acceptable=True,
+                confidence=0.95,
+            )
+
+    llm = LLM()
+    result = asyncio.run(ReferenceImageValidator(llm).validate_pair(left, right, brief))
+
+    assert result.accepted
+    assert "sealed bags of frozen vegetables or fruit are frozen packages" in llm.instruction
+    assert "not a fresh-produce display" in llm.instruction
 
 
 def test_item_validator_permits_a_required_generic_identity_label(tmp_path: Path) -> None:
@@ -649,6 +805,67 @@ def test_reference_image_brief_service_uses_strict_pair_schema() -> None:
     assert llm.calls[0][3]["schema_name"] == "paired_image_brief"
     assert "Never invent or exaggerate" in llm.calls[0][1]
     assert "Never make atmospheric cues mandatory" in llm.calls[0][1]
+
+
+def test_reference_image_brief_opens_refrigerator_and_freezer_interiors() -> None:
+    closed_brief = PairedImageBrief(
+        shared_style="matching front-facing white appliance photos with closed doors",
+        left=ProductImageBrief(
+            item="Frigider",
+            exact_subject="an upright refrigerator with a closed white door",
+            distinguishing_attributes=["vertical white cabinet"],
+            required_elements=["door handle"],
+            confusing_alternatives=["upright freezer"],
+        ),
+        right=ProductImageBrief(
+            item="Congelator",
+            exact_subject="an upright freezer with a closed white door",
+            distinguishing_attributes=["vertical white cabinet"],
+            required_elements=["door handle"],
+            prohibited_elements=["fresh produce", "fresh produce display"],
+            confusing_alternatives=["upright refrigerator"],
+        ),
+    )
+
+    class LLM:
+        def __init__(self) -> None:
+            self.user = ""
+
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            self.user = user
+            return closed_brief
+
+    llm = LLM()
+    result = asyncio.run(ReferenceImageBriefService(llm).generate(
+        TopicSpec(
+            title="Frigider vs Congelator",
+            comparison_left="Frigider",
+            comparison_right="Congelator",
+        ),
+        ResearchPackage(
+            topic="Frigider vs Congelator",
+            left_item="Frigider",
+            right_item="Congelator",
+        ),
+    ))
+
+    assert "doors open" in result.shared_style
+    assert "door open" in result.left.exact_subject
+    assert "shelves" in " ".join(result.left.distinguishing_attributes)
+    assert "crisper drawers" in " ".join(result.left.required_elements)
+    assert "door open" in result.right.exact_subject
+    assert "empty stacked" in result.right.exact_subject
+    assert "stacked freezer drawers" in " ".join(result.right.distinguishing_attributes)
+    assert "closed featureless door" in result.left.prohibited_elements
+    assert "closed featureless door" in result.right.prohibited_elements
+    assert not result.right.allow_packaging
+    assert "fresh produce" not in result.right.prohibited_elements
+    assert "fresh produce display" not in result.right.prohibited_elements
+    assert any(
+        "any visible food" in item
+        for item in result.right.prohibited_elements
+    )
+    assert "never request two closed, featureless exteriors" in " ".join(llm.user.casefold().split())
 
 
 def test_reference_image_brief_service_requires_truthful_cues_for_lookalikes() -> None:
@@ -974,7 +1191,7 @@ def test_cost_report_rows_expose_actual_and_estimated_details() -> None:
 def test_reference_image_service_prefers_valid_real_candidate(tmp_path: Path) -> None:
     source = tmp_path / "source.png"
     transparent = Image.new("RGBA", (800, 800), (255, 255, 255, 0))
-    ImageDraw.Draw(transparent).rectangle((200, 200, 600, 600), fill=(190, 150, 70, 255))
+    ImageDraw.Draw(transparent).rectangle((150, 150, 650, 650), fill=(190, 150, 70, 255))
     transparent.save(source)
 
     class Search:
@@ -1179,7 +1396,7 @@ def test_reference_image_service_tries_three_search_candidates_then_generates_wi
     assert all(attempt.semantic_result is None for attempt in provenance.attempts if attempt.source_type == "generated")
 
 
-def test_reference_image_service_removes_solid_generated_background(tmp_path: Path) -> None:
+def test_reference_image_service_crops_solid_generated_background(tmp_path: Path) -> None:
     class Search:
         async def search(self, query, max_results=10, include_images=False):
             return SearchResponse(query=query, images=[])
@@ -1205,7 +1422,11 @@ def test_reference_image_service_removes_solid_generated_background(tmp_path: Pa
     with Image.open(output) as source:
         assert source.format == "PNG"
         image = source.convert("RGBA")
-    assert image.getchannel("A").getextrema() == (0, 255)
+    assert image.size == (
+        provenance.asset_metrics.visible_width + 12,
+        provenance.asset_metrics.visible_height + 12,
+    )
+    assert provenance.asset_metrics.major_axis_occupancy == pytest.approx(721 / 1024)
 
 
 def test_mascot_preparer_removes_only_border_connected_background(tmp_path: Path) -> None:

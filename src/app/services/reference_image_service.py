@@ -13,7 +13,7 @@ from app.providers.images.openai_provider import RemoteImageProvider
 from app.providers.search.base import ImageCandidate
 from app.services.reference_image_validator import ImageValidationResult
 from app.services.job_cost_ledger import record_cost_event
-from app.services.mascot_asset_preparer import MascotAssetPreparer
+from app.services.product_asset_normalizer import ProductAssetMetrics, ProductAssetNormalizer
 
 
 class ImageAttempt(BaseModel):
@@ -37,6 +37,7 @@ class ImageProvenance(BaseModel):
     selection_reason: str
     candidates_tried: int = 0
     attempts: list[ImageAttempt] = Field(default_factory=list)
+    asset_metrics: ProductAssetMetrics
 
 
 class ReferenceImageService:
@@ -48,6 +49,7 @@ class ReferenceImageService:
         max_candidates: int = 3,
         validator: Optional[object] = None,
         max_generated_attempts: int = 3,
+        normalizer: Optional[ProductAssetNormalizer] = None,
     ):
         self.search_provider = search_provider
         self.generated_provider = generated_provider
@@ -55,6 +57,7 @@ class ReferenceImageService:
         self.max_candidates = max_candidates
         self.validator = validator
         self.max_generated_attempts = max_generated_attempts
+        self.normalizer = normalizer or ProductAssetNormalizer()
 
     async def acquire(
         self,
@@ -113,17 +116,17 @@ class ReferenceImageService:
                     pricing_source="no_incremental_api_cost",
                     request_key=candidate.url,
                 )
-                if not self._is_usable(candidate_path, require_transparency=True):
+                if not self._is_usable(candidate_path):
                     attempts.append(ImageAttempt(
                         source_type="real",
                         image_url=candidate.url,
                         source_url=candidate.source_url,
                         rejection_reasons=[
-                            "downloaded image has no transparent background"
+                            "downloaded image has no usable isolated white background"
                         ],
                     ))
                     continue
-                self._normalize(candidate_path, output_path)
+                asset_metrics = self.normalizer.normalize(candidate_path, output_path)
                 semantic_result = await self._validate(output_path, brief)
                 if semantic_result is None:
                     attempts.append(ImageAttempt(
@@ -162,6 +165,7 @@ class ReferenceImageService:
                     selection_reason="highest-ranked valid real image",
                     candidates_tried=index + 1,
                     attempts=attempts,
+                    asset_metrics=asset_metrics,
                 )
                 self._save_provenance(provenance, provenance_path)
                 return provenance
@@ -220,9 +224,7 @@ class ReferenceImageService:
                     )
                 else:
                     result = await self.generated_provider.generate(prompt, output_path, 1024, 1024)
-                if not self._is_usable(output_path, require_transparency=True):
-                    self._prepare_generated_background(output_path)
-                if not self._is_usable(output_path, require_transparency=True):
+                if not self._is_usable(output_path):
                     reasons = [
                         "generated image must use one uniform solid white background with no checkerboard"
                     ]
@@ -233,6 +235,7 @@ class ReferenceImageService:
                     ))
                     rejection_feedback.extend(reasons)
                     continue
+                asset_metrics = self.normalizer.normalize(output_path, output_path)
                 attempts.append(ImageAttempt(
                     source_type="generated",
                     prompt=prompt,
@@ -251,6 +254,7 @@ class ReferenceImageService:
                     ),
                     candidates_tried=len(candidates),
                     attempts=attempts,
+                    asset_metrics=asset_metrics,
                 )
                 self._save_provenance(provenance, provenance_path)
                 return provenance
@@ -300,12 +304,12 @@ class ReferenceImageService:
                 input_references=[left_path, right_path],
             )
             self._split_pair_image(pair_path, left_path, right_path)
-            self._prepare_generated_background(left_path)
-            self._prepare_generated_background(right_path)
-            if not self._is_usable(left_path, require_transparency=True):
+            if not self._is_usable(left_path):
                 raise RuntimeError("Left half of paired repair is not usable")
-            if not self._is_usable(right_path, require_transparency=True):
+            if not self._is_usable(right_path):
                 raise RuntimeError("Right half of paired repair is not usable")
+            left_metrics = self.normalizer.normalize(left_path, left_path)
+            right_metrics = self.normalizer.normalize(right_path, right_path)
             provider = result.provider or getattr(self.generated_provider, "name", "generated")
             left_provenance = ImageProvenance(
                 item=left_item,
@@ -315,6 +319,7 @@ class ReferenceImageService:
                 description=prompt,
                 selection_reason="one-shot paired repair",
                 attempts=[ImageAttempt(source_type="generated", prompt=prompt, selected=True)],
+                asset_metrics=left_metrics,
             )
             right_provenance = ImageProvenance(
                 item=right_item,
@@ -324,6 +329,7 @@ class ReferenceImageService:
                 description=prompt,
                 selection_reason="one-shot paired repair",
                 attempts=[ImageAttempt(source_type="generated", prompt=prompt, selected=True)],
+                asset_metrics=right_metrics,
             )
             return left_provenance, right_provenance
         finally:
@@ -470,7 +476,7 @@ class ReferenceImageService:
             "The full subject must be perfectly upright with no roll or tilt, "
             "with its vertical centerline aligned to the canvas midpoint. It must be centered, in sharp focus, and "
             "completely visible with a small even margin so nothing touches or is cropped by the frame edges, "
-            f"occupying about 72 percent of the canvas on a solid pure-white background extending to every edge. "
+            f"occupying 85 to 92 percent of the canvas, targeting 88 percent, on a solid pure-white background extending to every edge. "
             "Use physically plausible real-world proportions, materials, and lighting; do not produce "
             "an illustration, cartoon, CGI render, or product mockup. Do not replace the complete subject with a detail, control, accessory, or one component "
             "unless that detail is explicitly the requested subject. "
@@ -528,24 +534,6 @@ class ReferenceImageService:
             return sum(1 for pixel in corners if min(pixel[:3]) >= 225) >= 3
         except Exception:
             return False
-
-    @staticmethod
-    def _prepare_generated_background(path: Path) -> None:
-        prepared_path = path.parent / f".{path.stem}_prepared.png"
-        try:
-            MascotAssetPreparer(
-                canvas_size=(1024, 1024),
-                padding=24,
-                tolerance=32,
-            ).prepare_product(path, prepared_path)
-            prepared_path.replace(path)
-        finally:
-            prepared_path.unlink(missing_ok=True)
-
-    @staticmethod
-    def _normalize(source: Path, output: Path) -> None:
-        image = Image.open(source).convert("RGBA")
-        image.save(output, format="PNG")
 
     @staticmethod
     def _save_provenance(

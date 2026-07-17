@@ -13,7 +13,8 @@ from app.services.job_cost_ledger import (
 )
 from app.providers.llm.openai_provider import LLMProvider
 from app.providers.tts.base import TTSResult, TimedWord, TTSSettings
-from app.domain.models import ClosingBeat, NarrationBeat, ReferenceScriptPackage
+from app.domain.enums import MemoryDeviceKind
+from app.domain.models import ClosingBeat, MemoryDevice, NarrationBeat, ReferenceScriptPackage
 from app.services.beat_tts_service import BeatTTSService
 
 
@@ -195,13 +196,18 @@ def test_beat_tts_records_one_estimated_event_per_beat(tmp_path: Path) -> None:
         left_item="A",
         right_item="B",
         hook="Hook",
-        beats=[NarrationBeat(id="b0", text="First beat.", pause_after_ms=300)],
+        beats=[NarrationBeat(id="b0", text="First beat becomes the line people remember.", pause_after_ms=300)],
         closing=ClosingBeat(
             id="closing",
             text="Therefore choose the option that fits your needs best.",
             pause_after_ms=500,
         ),
         caption="A or B?",
+        memory_device=MemoryDevice(
+            kind=MemoryDeviceKind.REPEATABLE_SENTENCE,
+            line="First beat becomes the line people remember.",
+            beat_id="b0",
+        ),
     )
     ledger = JobCostLedger("job-1")
     with cost_scope(ledger, "tts"):

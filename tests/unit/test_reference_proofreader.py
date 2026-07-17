@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
+from app.domain.enums import MemoryDeviceKind
 from app.domain.models import (
     ClosingBeat,
     GenerationRequest,
     NarrationBeat,
+    MemoryDevice,
     ReferenceScriptPackage,
     TopicCandidate,
     TopicSpec,
@@ -21,7 +23,8 @@ from app.services.reference_script_service import ReferenceScriptService
 
 _FIX = {
     "Are o coaja grosă.": "Are o coajă groasă.",
-    "Pe scurt, una e grosă.": "Pe scurt, una e groasă.",
+    "Are o coaja grosă și rămâne așa.": "Are o coajă groasă și rămâne așa.",
+    "Pe scurt, una rămâne mult mai grosă.": "Pe scurt, una rămâne mult mai groasă.",
     "Paine sau tava? Diferenta?": "Pâine sau tavă? Diferența?",
     "Paine la cuptor": "Pâine la cuptor",
     "Paine la tava": "Pâine la tavă",
@@ -71,12 +74,17 @@ def _sample_script() -> ReferenceScriptPackage:
         hook="h",
         beats=[
             NarrationBeat(id="hook", text="Are o coaja grosă.", pause_after_ms=500, claim_ids=["c1"]),
-            NarrationBeat(id="verdict", text="Pe scurt, una e grosă.", pause_after_ms=750),
+            NarrationBeat(id="verdict", text="Pe scurt, una rămâne mult mai grosă.", pause_after_ms=750),
         ],
         closing=ClosingBeat(text="Vă pupă Pufăilă!", pause_after_ms=500),
         caption="Paine sau tava? Diferenta?",
         hashtags=["x"],
         claims=[],
+        memory_device=MemoryDevice(
+            kind=MemoryDeviceKind.REPEATABLE_SENTENCE,
+            line="Pe scurt, una rămâne mult mai grosă.",
+            beat_id="verdict",
+        ),
     )
 
 
@@ -86,7 +94,9 @@ def test_proofreader_corrects_beats_and_caption_preserving_structure() -> None:
     assert fixed.beats[0].text == "Are o coajă groasă."
     assert fixed.beats[0].pause_after_ms == 500
     assert fixed.beats[0].claim_ids == ["c1"]
-    assert fixed.beats[1].text == "Pe scurt, una e groasă."
+    assert fixed.beats[1].text == "Pe scurt, una rămâne mult mai groasă."
+    assert fixed.memory_device.line == "Pe scurt, una rămâne mult mai groasă."
+    assert fixed.memory_device.line in fixed.beats[1].text
     assert fixed.caption == "Pâine sau tavă? Diferența?"
     assert fixed.closing.text == "Vă pupă Pufăilă!"
 
@@ -126,13 +136,18 @@ def test_script_service_runs_proofreader_for_romanian() -> None:
                 left_item="Paine la cuptor",
                 right_item="Paine la tava",
                 hook="hook",
-                beats=[NarrationBeat(id="b0", text="Are o coaja grosă.")],
+                beats=[NarrationBeat(id="b0", text="Are o coaja grosă și rămâne așa.")],
                 closing=ClosingBeat(
                     id="closing",
                     text="Alege ce-ti place. Vă pupă Pufăilă!",
                     pause_after_ms=500,
                 ),
                 caption="Paine sau tava? Diferenta?",
+                memory_device=MemoryDevice(
+                    kind=MemoryDeviceKind.REPEATABLE_SENTENCE,
+                    line="Are o coaja grosă și rămâne așa.",
+                    beat_id="b0",
+                ),
             )
 
     service = ReferenceScriptService(ScriptLLM(), ReferenceProofreader(_CorrectingLLM()))
@@ -153,12 +168,24 @@ def test_script_service_runs_proofreader_for_romanian() -> None:
 def test_topic_generator_proofreads_romanian_labels() -> None:
     class TopicLLM:
         async def complete_structured(self, system, user, model, **kwargs):
-            return TopicCandidate(
+            return model(topics=[TopicCandidate(
                 title="Paine la cuptor vs Paine la tava",
                 left="Paine la cuptor",
                 right="Paine la tava",
                 angle="Doua feluri de paine.",
-            )
+                selection_signals={
+                    name: {"score": score, "reason": f"specific {name}"}
+                    for name, score in {
+                        "common_confusion": 4,
+                        "everyday_familiarity": 5,
+                        "cultural_debate": 3,
+                        "surprising_payoff": 4,
+                        "shareability": 4,
+                        "visual_feasibility": 4,
+                        "research_risk": 1,
+                    }.items()
+                },
+            )])
 
     generator = ReferenceTopicGenerator(
         TopicLLM(), None, ReferenceProofreader(_CorrectingLLM())

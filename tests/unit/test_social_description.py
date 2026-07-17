@@ -4,9 +4,11 @@ import asyncio
 
 import pytest
 
+from app.domain.enums import MemoryDeviceKind
 from app.domain.models import (
     ClosingBeat,
     NarrationBeat,
+    MemoryDevice,
     ReferenceScriptPackage,
     ResearchFact,
     ResearchPackage,
@@ -69,6 +71,11 @@ def _script() -> ReferenceScriptPackage:
         closing=ClosingBeat(id="closing", text="Vă pupă Pufăilă!", pause_after_ms=500),
         caption="Frigider sau congelator? Tu ce alegi?",
         hashtags=["#Frigider", "congelator", "#Pufăilă"],
+        memory_device=MemoryDevice(
+            kind=MemoryDeviceKind.ANALOGY,
+            line="Frigiderul păstrează mâncarea rece fără să o înghețe.",
+            beat_id="left",
+        ),
     )
 
 

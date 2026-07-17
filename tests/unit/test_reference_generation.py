@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app.domain.enums import Focus, MascotAnchor, MascotPose
+from app.domain.enums import Focus, MascotAnchor, MascotPose, MemoryDeviceKind
 from app.domain.models import (
     ClosingBeat,
     DirectionCue,
@@ -18,6 +18,7 @@ from app.domain.models import (
     ReferenceScriptPackage,
     ResearchPackage,
     GenerationRequest,
+    MemoryDevice,
     RenderResult,
     SocialDescription,
     TimedBeat,
@@ -26,6 +27,17 @@ from app.domain.models import (
     TopicCandidate,
     TopicSpec,
 )
+
+
+MEMORY_LINE = "Aceeași formă nu înseamnă deloc aceeași treabă."
+
+
+def _memory(beat_id: str) -> MemoryDevice:
+    return MemoryDevice(
+        kind=MemoryDeviceKind.REPEATABLE_SENTENCE,
+        line=MEMORY_LINE,
+        beat_id=beat_id,
+    )
 from app.services.reference_direction_service import ReferenceDirectionService
 from app.services.reference_direction_validator import ReferenceDirectionValidator
 from app.services.reference_adapters import (
@@ -40,8 +52,21 @@ from app.services.timeline_compiler import TimelineCompiler
 from app.services.video_generation_service import VideoGenerationService
 
 
-def test_reference_duration_gate_accepts_60_seconds() -> None:
-    assert VideoGenerationService._duration_is_acceptable(60.0)
+def _topic_signals(**overrides: int) -> dict:
+    values = {
+        "common_confusion": 4,
+        "everyday_familiarity": 4,
+        "cultural_debate": 3,
+        "surprising_payoff": 4,
+        "shareability": 4,
+        "visual_feasibility": 4,
+        "research_risk": 1,
+    }
+    values.update(overrides)
+    return {
+        name: {"score": score, "reason": f"specific reason for {name}"}
+        for name, score in values.items()
+    }
 
 
 def test_reference_topic_generator_requires_concrete_physical_items() -> None:
@@ -51,12 +76,25 @@ def test_reference_topic_generator_requires_concrete_physical_items() -> None:
 
         async def complete_structured(self, system, user, model_type, **kwargs):
             self.user_prompt = user
-            return TopicCandidate(
-                title="Cafea vs Ceai",
-                left="Cafea",
-                right="Ceai",
-                angle="Aromă și cofeină",
-            )
+            return model_type(topics=[
+                TopicCandidate(
+                    title="Frigider vs Congelator",
+                    left="Frigider",
+                    right="Congelator",
+                    angle="Temperatură",
+                    selection_signals=_topic_signals(
+                        common_confusion=1,
+                        cultural_debate=1,
+                    ),
+                ),
+                TopicCandidate(
+                    title="Cafea vs Ceai",
+                    left="Cafea",
+                    right="Ceai",
+                    angle="Aromă și cofeină",
+                    selection_signals=_topic_signals(common_confusion=5),
+                ),
+            ])
 
     llm = LLM()
 
@@ -67,6 +105,113 @@ def test_reference_topic_generator_requires_concrete_physical_items() -> None:
     assert "Do not generate abstract concepts" in llm.user_prompt
     assert "readable paragraphs, URLs, warning labels" in llm.user_prompt
     assert "product or concept" not in llm.user_prompt
+    assert "common_confusion" in llm.user_prompt
+    assert "exactly six" in llm.user_prompt.casefold()
+
+
+def test_reference_topic_generator_filters_history_before_selection(tmp_path: Path) -> None:
+    from app.services.topic_history import TopicHistoryService
+
+    history = TopicHistoryService(tmp_path / "history.json")
+    history.add(title="Gem vs dulceață", left="Gem", right="Dulceață")
+
+    class LLM:
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            return model_type(topics=[
+                TopicCandidate(
+                    title="Dulceață vs gem",
+                    left="Dulceață",
+                    right="Gem",
+                    angle="Preparare",
+                    selection_signals=_topic_signals(common_confusion=5),
+                ),
+                TopicCandidate(
+                    title="Corb vs cioară",
+                    left="Corb",
+                    right="Cioară",
+                    angle="Specii diferite",
+                    selection_signals=_topic_signals(common_confusion=5),
+                ),
+            ])
+
+    result = asyncio.run(ReferenceTopicGenerator(LLM(), history).generate(GenerationRequest()))
+
+    assert result.title == "Corb vs cioară"
+
+
+def test_reference_topic_generator_repairs_one_ineligible_pool() -> None:
+    class LLM:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            self.calls.append({"user": user, **kwargs})
+            if len(self.calls) == 1:
+                return model_type(topics=[TopicCandidate(
+                    title="Frigider vs congelator",
+                    left="Frigider",
+                    right="Congelator",
+                    angle="Temperatură",
+                    selection_signals=_topic_signals(
+                        common_confusion=1,
+                        cultural_debate=1,
+                    ),
+                )])
+            return model_type(topics=[TopicCandidate(
+                title="Gem vs dulceață",
+                left="Gem",
+                right="Dulceață",
+                angle="Preparare",
+                selection_signals=_topic_signals(common_confusion=5),
+            )])
+
+    llm = LLM()
+    result = asyncio.run(ReferenceTopicGenerator(llm).generate(GenerationRequest()))
+
+    assert result.title == "Gem vs dulceață"
+    assert [call["schema_name"] for call in llm.calls] == [
+        "reference_topic",
+        "reference_topic_repair",
+    ]
+    assert llm.calls[1]["temperature"] == 0.0
+    assert "weak confusion tension" in llm.calls[1]["user"]
+
+
+def test_reference_topic_generator_fails_after_one_repair() -> None:
+    class LLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            self.calls += 1
+            return model_type(topics=[TopicCandidate(
+                title="Frigider vs congelator",
+                left="Frigider",
+                right="Congelator",
+                angle="Temperatură",
+                selection_signals=_topic_signals(
+                    common_confusion=1,
+                    cultural_debate=1,
+                ),
+            )])
+
+    llm = LLM()
+    with pytest.raises(RuntimeError, match="No eligible confusion-tension topic after repair"):
+        asyncio.run(ReferenceTopicGenerator(llm).generate(GenerationRequest()))
+    assert llm.calls == 2
+
+
+def test_reference_topic_override_bypasses_automatic_selection() -> None:
+    class LLM:
+        async def complete_structured(self, *args, **kwargs):
+            raise AssertionError("LLM must not be called for a manual override")
+
+    result = asyncio.run(ReferenceTopicGenerator(LLM()).generate(
+        GenerationRequest(topic_override="Gem vs Dulceață")
+    ))
+
+    assert result.comparison_left == "Gem"
+    assert result.comparison_right == "Dulceață"
 
 
 def test_reference_script_service_requests_romanian_beat_schema() -> None:
@@ -81,13 +226,17 @@ def test_reference_script_service_requests_romanian_beat_schema() -> None:
                 left_item="Cafea",
                 right_item="Ceai",
                 hook="Diferența începe aici.",
-                beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+                beats=[
+                    NarrationBeat(id="b0", text=f"Cafeaua acționează rapid. {MEMORY_LINE}"),
+                    NarrationBeat(id="verdict", text="Alege după ritmul potrivit."),
+                ],
                 closing=ClosingBeat(
                     id="closing",
                     text="Așadar, alege opțiunea care se potrivește mai bine nevoilor tale.",
                     pause_after_ms=500,
                 ),
                 caption="Cafea sau ceai?",
+                memory_device=_memory("b0"),
             )
 
     llm = FakeLLM()
@@ -103,6 +252,7 @@ def test_reference_script_service_requests_romanian_beat_schema() -> None:
     assert result.beats[-1].pause_after_ms == 750
     assert llm.calls[0][2] is ReferenceScriptPackage
     assert llm.calls[0][3]["schema_name"] == "reference_script"
+    assert llm.calls[0][3]["max_tokens"] == 5000
     assert "același număr de caracteristici" in llm.calls[0][1]
     assert "Pe scurt," in llm.calls[0][1]
     assert "română" in llm.calls[0][1].casefold()
@@ -113,6 +263,18 @@ def test_reference_script_service_requests_romanian_beat_schema() -> None:
     assert "zahăr vanilat" in prompt
     assert "remake-ul" in prompt
     assert "nu reutiliza faptele" in prompt.casefold()
+    assert "exactly one memory_device" in prompt
+    assert "analogy" in prompt
+    assert "surprising_correction" in prompt
+    assert "humorous_contrast" in prompt
+    assert "repeatable_sentence" in prompt
+    assert "Frigiderul pune mâncarea pe pauză" in prompt
+    assert "structural example only" in prompt
+    assert "must not add an unsupported fact" in prompt
+    assert "claim_ids" in prompt
+    assert "approximate pacing target" in prompt
+    assert "buget maxim" not in prompt
+    assert "cel mult 50" not in prompt
 
 
 def test_reference_script_service_enforces_intro_and_signed_outro() -> None:
@@ -123,13 +285,17 @@ def test_reference_script_service_enforces_intro_and_signed_outro() -> None:
                 left_item="Coffee",
                 right_item="Tea",
                 hook="Alternative hook.",
-                beats=[NarrationBeat(id="b0", text="Coffee has an intense flavor.")],
+                beats=[
+                    NarrationBeat(id="b0", text=f"Coffee has an intense flavor. {MEMORY_LINE}"),
+                    NarrationBeat(id="verdict", text="Choose what fits the moment."),
+                ],
                 closing=ClosingBeat(
                     id="closing",
                     text="Choose the drink that suits the moment. Hugs from Pufăilă!",
                     pause_after_ms=750,
                 ),
                 caption="Coffee or tea?",
+                memory_device=_memory("b0"),
             )
 
     result = asyncio.run(ReferenceScriptService(FakeLLM()).generate(
@@ -144,6 +310,48 @@ def test_reference_script_service_enforces_intro_and_signed_outro() -> None:
     assert result.beats[-1].pause_after_ms == 750
     assert result.closing.text == "Hugs from Pufăilă!"
     assert result.closing.pause_after_ms == 500
+
+
+def test_reference_script_service_normalizes_hook_case_without_duplicating_it() -> None:
+    class FakeLLM:
+        async def complete_structured(self, system, user, model_type, **kwargs):
+            opening = "Avem frigider și avem congelator. Dar care e diferența?"
+            return ReferenceScriptPackage(
+                title="Frigider vs Congelator",
+                left_item="Frigider",
+                right_item="Congelator",
+                hook=opening,
+                beats=[
+                    NarrationBeat(id="opening", text=opening, pause_after_ms=500),
+                    NarrationBeat(id="memory", text=MEMORY_LINE),
+                    NarrationBeat(id="verdict", text="Pe scurt, răcesc diferit."),
+                ],
+                closing=ClosingBeat(id="closing", text="Vă pupă Pufăilă!", pause_after_ms=500),
+                caption="Frigider sau congelator?",
+                memory_device=_memory("memory"),
+            )
+
+    result = asyncio.run(ReferenceScriptService(FakeLLM()).generate(
+        TopicSpec(
+            title="Frigider vs Congelator",
+            comparison_left="Frigider",
+            comparison_right="Congelator",
+        ),
+        ResearchPackage(
+            topic="Frigider vs Congelator",
+            left_item="Frigider",
+            right_item="Congelator",
+        ),
+        target_duration_seconds=25,
+        language="ro",
+    ))
+
+    assert sum(
+        beat.text.casefold()
+        == "Avem Frigider și avem Congelator. Dar care e diferența?".casefold()
+        for beat in result.beats
+    ) == 1
+    assert result.beats[0].text == "Avem Frigider și avem Congelator. Dar care e diferența?"
 
 
 def test_reference_direction_service_returns_word_anchored_cues() -> None:
@@ -162,13 +370,14 @@ def test_reference_direction_service_returns_word_anchored_cues() -> None:
         left_item="Cafea",
         right_item="Ceai",
         hook="Hook",
-        beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+        beats=[NarrationBeat(id="b0", text=f"Cafeaua acționează rapid. {MEMORY_LINE}")],
         closing=ClosingBeat(
             id="closing",
             text="Așadar, alege opțiunea care se potrivește mai bine nevoilor tale.",
             pause_after_ms=500,
         ),
         caption="Cafea sau ceai?",
+        memory_device=_memory("b0"),
     )
 
     result = asyncio.run(ReferenceDirectionService(FakeLLM()).generate(script, language="ro"))
@@ -188,10 +397,11 @@ def test_direction_validator_choreographs_the_required_hook() -> None:
                 id="hook",
                 text="We have Coffee and we have Tea. But what's the difference?",
             ),
-            NarrationBeat(id="b0", text="Coffee is intense."),
+            NarrationBeat(id="b0", text=f"Coffee is intense. {MEMORY_LINE}"),
         ],
         closing=ClosingBeat(id="closing", text="Hugs from Pufăilă!", pause_after_ms=500),
         caption="Coffee or tea?",
+        memory_device=_memory("b0"),
     )
 
     aligned = ReferenceDirectionValidator().align_with_script(
@@ -236,11 +446,12 @@ def test_direction_validator_balances_two_sided_beats_without_diacritics() -> No
             ),
             NarrationBeat(
                 id="body",
-                text="Cacao praf e amar. Ciocolata topita e dulce.",
+                text=f"Cacao praf e amar. Ciocolata topita e dulce. {MEMORY_LINE}",
             ),
         ],
         closing=ClosingBeat(id="closing", text="Vă pupă Pufăilă!", pause_after_ms=500),
         caption="Cacao sau ciocolată?",
+        memory_device=_memory("body"),
     )
     plan = DirectionPlan(cues=[
         DirectionCue(
@@ -275,7 +486,7 @@ def test_direction_fallback_balances_every_two_sided_body_beat() -> None:
             ),
             NarrationBeat(
                 id="body_1",
-                text="Cacao praf e intens. Ciocolata topita e dulce.",
+                text=f"Cacao praf e intens. Ciocolata topita e dulce. {MEMORY_LINE}",
             ),
             NarrationBeat(
                 id="body_2",
@@ -284,6 +495,7 @@ def test_direction_fallback_balances_every_two_sided_body_beat() -> None:
         ],
         closing=ClosingBeat(id="closing", text="Vă pupă Pufăilă!", pause_after_ms=500),
         caption="Cacao sau ciocolată?",
+        memory_device=_memory("body_1"),
     )
 
     fallback = ReferenceDirectionValidator().fallback(script)
@@ -319,7 +531,7 @@ def test_direction_service_replaces_all_neutral_anchor_travel() -> None:
         right_item="Ceai",
         hook="Comparația contează.",
         beats=[
-            NarrationBeat(id="left", text="Cafeaua acționează rapid.", pause_after_ms=300),
+            NarrationBeat(id="left", text=f"Cafeaua acționează rapid. {MEMORY_LINE}", pause_after_ms=300),
             NarrationBeat(id="right", text="Ceaiul acționează mai blând.", pause_after_ms=300),
         ],
         closing=ClosingBeat(
@@ -328,6 +540,7 @@ def test_direction_service_replaces_all_neutral_anchor_travel() -> None:
             pause_after_ms=750,
         ),
         caption="Cafea sau ceai?",
+        memory_device=_memory("left"),
     )
 
     result = asyncio.run(ReferenceDirectionService(AllNeutralLLM()).generate(script, "ro"))
@@ -352,7 +565,7 @@ def test_direction_alignment_mirrors_inverted_pointing() -> None:
         right_item="Ceai",
         hook="Comparația contează.",
         beats=[
-            NarrationBeat(id="left", text="Cafeaua acționează rapid.", pause_after_ms=300),
+            NarrationBeat(id="left", text=f"Cafeaua acționează rapid. {MEMORY_LINE}", pause_after_ms=300),
             NarrationBeat(id="right", text="Ceaiul acționează mai blând.", pause_after_ms=300),
         ],
         closing=ClosingBeat(
@@ -361,6 +574,7 @@ def test_direction_alignment_mirrors_inverted_pointing() -> None:
             pause_after_ms=750,
         ),
         caption="Cafea sau ceai?",
+        memory_device=_memory("left"),
     )
     inverted = DirectionPlan(cues=[
         DirectionCue(
@@ -401,7 +615,7 @@ def test_direction_alignment_balances_inflected_two_sided_beats() -> None:
         beats=[
             NarrationBeat(
                 id="both",
-                text="Cafeaua și ceaiul au avantaje diferite.",
+                text=f"Cafeaua și ceaiul au avantaje diferite. {MEMORY_LINE}",
                 pause_after_ms=300,
             ),
         ],
@@ -411,6 +625,7 @@ def test_direction_alignment_balances_inflected_two_sided_beats() -> None:
             pause_after_ms=750,
         ),
         caption="Cafea sau ceai?",
+        memory_device=_memory("both"),
     )
     plan = DirectionPlan(cues=[
         DirectionCue(
@@ -445,10 +660,11 @@ def test_direction_validator_drops_wrong_focus_on_continuation_beats() -> None:
                 text="Avem Brânză de burduf și avem Brânză telemea. Dar care e diferența?",
             ),
             NarrationBeat(id="left_intro", text="Brânza de burduf se maturează în coajă de brad."),
-            NarrationBeat(id="left_taste", text="Gust puternic, picant, se simte imediat."),
+            NarrationBeat(id="left_taste", text=f"Gust puternic, picant, se simte imediat. {MEMORY_LINE}"),
         ],
         closing=ClosingBeat(id="closing", text="Vă pupă Pufăilă!", pause_after_ms=500),
         caption="Burduf sau telemea?",
+        memory_device=_memory("left_taste"),
     )
     plan = DirectionPlan(cues=[
         DirectionCue(
@@ -571,6 +787,106 @@ def test_pair_repair_regenerates_only_selected_side_once(tmp_path: Path) -> None
     assert metadata["generation_calls"] == 1
 
 
+def test_pair_repair_revalidates_and_retries_a_failed_first_repair(tmp_path: Path) -> None:
+    class Images:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def acquire(self, item, output_path, **kwargs):
+            self.calls += 1
+            Image.new("RGBA", (400, 400), (255, 255, 255, 0)).save(output_path)
+            return {"item": item, "attempt": self.calls}
+
+    class Validator:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def validate_pair(self, left_path, right_path, brief):
+            self.calls += 1
+            if self.calls == 1:
+                return ImageValidationResult(
+                    depicts_requested_item=True,
+                    distinguishing_attributes_present=True,
+                    contains_logo_or_prominent_text=False,
+                    contains_prohibited_content=True,
+                    background_acceptable=True,
+                    repair_side="right",
+                    fatal_reasons=["First repair still contains prohibited content"],
+                    repair_instructions=["Remove all visible food"],
+                    confidence=0.95,
+                )
+            return ImageValidationResult(
+                depicts_requested_item=True,
+                distinguishing_attributes_present=True,
+                contains_logo_or_prominent_text=False,
+                contains_prohibited_content=False,
+                background_acceptable=True,
+                confidence=0.95,
+            )
+
+    brief = PairedImageBrief(
+        shared_style="matching open appliance photographs",
+        left=ProductImageBrief(
+            item="Frigider",
+            exact_subject="open refrigerator with shelves",
+            distinguishing_attributes=["open shelves"],
+        ),
+        right=ProductImageBrief(
+            item="Congelator",
+            exact_subject="open freezer with empty drawers",
+            distinguishing_attributes=["empty stacked drawers"],
+        ),
+    )
+    images = Images()
+    validator = Validator()
+    service = VideoGenerationService(
+        output_base=tmp_path,
+        topic_generator=None,
+        researcher=None,
+        script_writer=None,
+        verifier=None,
+        director=None,
+        beat_tts=None,
+        image_service=images,
+        audio_service=None,
+        sfx_service=None,
+        timeline_compiler=None,
+        renderer=None,
+        quality_service=None,
+        image_validator=validator,
+    )
+    initial = ImageValidationResult(
+        depicts_requested_item=True,
+        distinguishing_attributes_present=True,
+        contains_logo_or_prominent_text=False,
+        contains_prohibited_content=True,
+        background_acceptable=True,
+        repair_side="right",
+        fatal_reasons=["Initial freezer contains prohibited content"],
+        repair_instructions=["Regenerate an empty freezer"],
+        confidence=0.95,
+    )
+
+    _, _, validation, repairs = asyncio.run(service._repair_pair_until_stable(
+        TopicSpec(
+            title="Frigider vs Congelator",
+            comparison_left="Frigider",
+            comparison_right="Congelator",
+        ),
+        tmp_path / "left.png",
+        tmp_path / "right.png",
+        brief,
+        initial,
+        {"old": "left"},
+        {"old": "right"},
+    ))
+
+    assert images.calls == 2
+    assert validator.calls == 2
+    assert not validation.has_fatal_issues
+    assert [repair["attempt"] for repair in repairs] == [1, 2]
+
+
 def test_pair_repair_both_sides_uses_one_paired_generation_call(tmp_path: Path) -> None:
     class Images:
         def __init__(self) -> None:
@@ -672,6 +988,22 @@ def test_final_pair_policy_blocks_fatal_but_not_cosmetic_results() -> None:
     ]
 
 
+def test_final_pair_policy_records_low_confidence_without_rejecting_valid_identity() -> None:
+    uncertain = ImageValidationResult(
+        depicts_requested_item=True,
+        distinguishing_attributes_present=True,
+        contains_logo_or_prominent_text=False,
+        contains_prohibited_content=False,
+        background_acceptable=True,
+        realism_acceptable=True,
+        warning_reasons=["Identity confidence is limited by the synthetic image"],
+        confidence=0.72,
+    )
+
+    assert uncertain.has_fatal_issues
+    assert VideoGenerationService._pair_failure_reasons(uncertain) == []
+
+
 def test_reference_researcher_requests_a_bounded_summary_not_full_sources() -> None:
     class Search:
         async def search(self, query, max_results=10, include_images=False):
@@ -736,13 +1068,14 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
                 left_item=topic.comparison_left,
                 right_item=topic.comparison_right,
                 hook="Hook",
-                beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+                beats=[NarrationBeat(id="b0", text=f"Cafeaua acționează rapid. {MEMORY_LINE}")],
                 closing=ClosingBeat(
                     id="closing",
                     text="Așadar, alege opțiunea care se potrivește mai bine nevoilor tale.",
                     pause_after_ms=500,
                 ),
                 caption="Cafea sau ceai?",
+                memory_device=_memory("b0"),
             )
 
     class Verifier:
@@ -887,7 +1220,7 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
     )
     assert social_payload["publishable_text"].startswith("Cafea vs Ceai ☕")
     assert "social_description" in state["completed"]
-    assert tts.settings.speed == pytest.approx(1.05)
+    assert tts.settings.speed == pytest.approx(0.92)
     assert "quality" in state["completed"]
     assert stages[0] == "preflight"
     assert first.render_result.cost_report_path == tmp_path / "jobs" / "job-1" / "cost_report.json"
@@ -897,7 +1230,7 @@ def test_video_generation_service_checkpoints_and_resumes(tmp_path: Path) -> Non
     assert len(report["events"]) == len({event["event_id"] for event in report["events"]})
 
 
-def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_path: Path) -> None:
+def test_video_generation_does_not_regenerate_script_for_measured_duration(tmp_path: Path) -> None:
     class TopicGenerator:
         async def generate(self, request):
             return TopicSpec(title="Coffee vs Tea", comparison_left="Coffee", comparison_right="Tea")
@@ -912,15 +1245,14 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
 
         async def generate(self, topic, research, target_duration_seconds, language, repair_notes=None):
             self.repair_notes.append(list(repair_notes or []))
-            long_script = not repair_notes
             return ReferenceScriptPackage(
                 title=topic.title,
                 left_item=topic.comparison_left,
                 right_item=topic.comparison_right,
-                hook="long" if long_script else "short",
+                hook="original",
                 beats=[NarrationBeat(
                     id="b0",
-                    text=" ".join(["word"] * (40 if long_script else 30)),
+                    text=" ".join(["word"] * 73) + f". {MEMORY_LINE}",
                 )],
                 closing=ClosingBeat(
                     id="closing",
@@ -928,6 +1260,7 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
                     pause_after_ms=500,
                 ),
                 caption="Coffee or tea?",
+                memory_device=_memory("b0"),
             )
 
     class Verifier:
@@ -953,7 +1286,7 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
         async def synthesize(self, script, voice_id, language, output_dir, settings=None):
             self.calls += 1
             output_dir.mkdir(parents=True, exist_ok=True)
-            duration = 61.0 if script.hook == "long" else 24.0
+            duration = 61.0
             audio = output_dir / f"narration_{self.calls}.wav"
             audio.write_bytes(b"audio")
             return audio, TimedTranscript(
@@ -1046,10 +1379,10 @@ def test_video_generation_repairs_tts_that_exceeds_the_60_second_maximum(tmp_pat
 
     result = asyncio.run(service.generate(GenerationRequest(target_duration_seconds=25)))
 
-    assert result.render_result.duration_seconds == 24.0
-    assert tts.calls == 2
-    assert director.hooks == ["short"]
-    assert description_writer.hooks == ["short"]
-    assert renderer.durations == [24.0]
-    assert audio.mixed_durations == [24.0]
-    assert "Measured narration duration was 61.0s" in script_writer.repair_notes[1][0]
+    assert result.render_result.duration_seconds == 61.0
+    assert tts.calls == 1
+    assert script_writer.repair_notes == [[]]
+    assert director.hooks == ["original"]
+    assert description_writer.hooks == ["original"]
+    assert renderer.durations == [61.0]
+    assert audio.mixed_durations == [61.0]

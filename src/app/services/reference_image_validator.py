@@ -200,10 +200,13 @@ class ReferenceImageValidator:
         })
         with TemporaryDirectory(prefix="reference-image-validation-") as directory:
             base = Path(directory)
-            inspection_paths = [
-                self._white_matte(left_path, base / "left.png"),
-                self._white_matte(right_path, base / "right.png"),
-            ]
+            left_inspection = self._white_matte(left_path, base / "left.png")
+            right_inspection = self._white_matte(right_path, base / "right.png")
+            inspection_paths = [self._pair_contact_sheet(
+                left_inspection,
+                right_inspection,
+                base / "left-right-pair.png",
+            )]
             interface_guidance = ""
             content_rejection = ""
             if brief.left.allow_text or brief.right.allow_text:
@@ -220,10 +223,25 @@ class ReferenceImageValidator:
                 content_rejection = (
                     "Do not mark ordinary interface text or incidental in-screen brand marks as prominent text. "
                 )
+            freezer_guidance = ""
+            if any(
+                term in f"{side.item} {side.exact_subject}".casefold()
+                for side in (brief.left, brief.right)
+                for term in ("freezer", "congelator")
+            ):
+                freezer_guidance = (
+                    "For the freezer side, sealed bags of frozen vegetables or fruit are frozen packages, "
+                    "not a fresh-produce display. Reject produce only when loose and unpackaged on open "
+                    "refrigerator-style shelves. "
+                )
             result = await self.llm.complete_structured_with_images(
                 _VALIDATE_PAIR_SYSTEM,
                 (
-                    "The first image is left and the second is right. Confirm both exact identities, "
+                    "The single inspection image is a side-by-side contact sheet. Its LEFT HALF is "
+                    "the left product and must be judged only against paired_brief.left. Its RIGHT HALF "
+                    "is the right product and must be judged only against paired_brief.right. Never apply "
+                    "the right brief's required or prohibited elements to the left half, or the left "
+                    "brief's rules to the right half. Confirm both exact identities, "
                     "clear visual distinction, matching angle, scale, crop, lighting and background. "
                     "Both products must be perfectly upright, centered on their own canvas, and "
                     "positioned symmetrically as a pair. Reject either image if the object is tilted, "
@@ -251,6 +269,7 @@ class ReferenceImageValidator:
                     "explicitly requires matching colors. Different product colors are normal and can help communicate "
                     "the comparison. "
                     + _VALIDATE_PAIR_GUIDE
+                    + freezer_guidance
                     + f"Paired brief: {validation_brief.model_dump_json()}"
                     + f"{interface_guidance}{content_rejection}"
                 ),
@@ -258,7 +277,8 @@ class ReferenceImageValidator:
                 ImageValidationResult,
                 schema_name="paired_image_validation",
                 temperature=0.0,
-                max_tokens=1200,
+                max_tokens=2400,
+                max_repair_attempts=2,
             )
             return self._apply_observability_policy(result)
 
@@ -282,6 +302,21 @@ class ReferenceImageValidator:
         matte = Image.new("RGBA", source.size, (255, 255, 255, 255))
         matte.alpha_composite(source)
         matte.convert("RGB").save(destination_path, format="PNG")
+        return destination_path
+
+    @staticmethod
+    def _pair_contact_sheet(
+        left_path: Path,
+        right_path: Path,
+        destination_path: Path,
+    ) -> Path:
+        left = Image.open(left_path).convert("RGB")
+        right = Image.open(right_path).convert("RGB")
+        height = max(left.height, right.height)
+        sheet = Image.new("RGB", (left.width + right.width, height), "white")
+        sheet.paste(left, (0, (height - left.height) // 2))
+        sheet.paste(right, (left.width, (height - right.height) // 2))
+        sheet.save(destination_path, format="PNG")
         return destination_path
 
     @staticmethod

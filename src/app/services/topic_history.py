@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -10,9 +10,6 @@ from typing import Optional
 from app.domain.models import TopicSpec
 
 logger = logging.getLogger(__name__)
-
-_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
-
 
 class TopicHistoryService:
     def __init__(self, history_path: Path):
@@ -39,7 +36,12 @@ class TopicHistoryService:
 
     @staticmethod
     def _normalize(text: str) -> str:
-        return _NORMALIZE_RE.sub("", text.lower()).strip()
+        decomposed = unicodedata.normalize("NFKD", text.casefold())
+        return "".join(
+            character
+            for character in decomposed
+            if character.isalnum() and not unicodedata.combining(character)
+        )
 
     def _pair_key(self, left: str, right: str) -> str:
         return f"{self._normalize(left)}|{self._normalize(right)}"

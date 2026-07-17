@@ -50,10 +50,15 @@ class ReferenceRenderService:
         )
         poster_path = output_dir / "poster.jpg"
         captures[0].save(poster_path, quality=92)
+        thumbnail_path = output_dir / "thumbnail.png"
+        self.renderer.compose_thumbnail(spec).save(thumbnail_path, format="PNG")
         thumbnail_timestamp_ms = round(spec.thumbnail_timestamp_seconds * 1000)
         (output_dir / "thumbnail.json").write_text(
             json.dumps(
-                {"thumbnail_offset_ms": thumbnail_timestamp_ms},
+                {
+                    "thumbnail_path": thumbnail_path.name,
+                    "thumbnail_offset_ms": thumbnail_timestamp_ms,
+                },
                 indent=2,
                 ensure_ascii=False,
             ),
@@ -85,6 +90,7 @@ class ReferenceRenderService:
             poster_path=poster_path,
             contact_sheet_path=contact_sheet_path,
             timeline_path=timeline_path,
+            thumbnail_path=thumbnail_path,
             thumbnail_timestamp_ms=thumbnail_timestamp_ms,
             transcript_path=transcript_path,
             direction_path=direction_path,

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+import unicodedata
 from pathlib import Path
 
 from PIL import Image
 
-from app.domain.enums import MascotAnchor, MascotPose
+from app.domain.enums import MascotAnchor, MascotPose, VisualEventKind
 from app.domain.models import CompiledVideoSpec, RenderResult
 
 
@@ -31,6 +33,12 @@ class ReferenceQualityService:
         problems.extend(self._caption_problems(spec))
         problems.extend(self._sfx_problems(spec))
         problems.extend(self._direction_problems(spec))
+        problems.extend(self._visual_event_problems(spec))
+        problems.extend(self._memory_device_problems(spec))
+        problems.extend(self._provenance_problems(
+            result.image_provenance_path,
+            pair_validation_required=result.paired_image_brief_path is not None,
+        ))
         problems.extend(self._visual_problems(result.poster_path))
         return problems
 
@@ -77,3 +85,64 @@ class ReferenceQualityService:
         ):
             return ["Reference mascot direction uses only the neutral pose"]
         return []
+
+    @staticmethod
+    def _visual_event_problems(spec: CompiledVideoSpec) -> list[str]:
+        expected = [
+            VisualEventKind.REVEAL_LEFT,
+            VisualEventKind.REVEAL_RIGHT,
+            VisualEventKind.SHOW_BOTH,
+        ]
+        if [event.kind for event in spec.visual_events] != expected:
+            return ["Reference hook must contain ordered left, right, and both visual events"]
+        starts = [event.start for event in spec.visual_events]
+        if starts != sorted(starts):
+            return ["Reference hook visual events are not chronological"]
+        return []
+
+    @staticmethod
+    def _memory_device_problems(spec: CompiledVideoSpec) -> list[str]:
+        if spec.memory_device is None:
+            return []
+        expected = [
+            ReferenceQualityService._spoken_token(word)
+            for word in spec.memory_device.line.split()
+        ]
+        actual = [ReferenceQualityService._spoken_token(word.word) for word in spec.transcript.words]
+        width = len(expected)
+        if any(actual[index:index + width] == expected for index in range(len(actual) - width + 1)):
+            return []
+        return ["Memorable line is missing from compiled narration"]
+
+    @staticmethod
+    def _spoken_token(value: str) -> str:
+        normalized = unicodedata.normalize("NFKC", value).casefold()
+        return "".join(character for character in normalized if character.isalnum())
+
+    @staticmethod
+    def _provenance_problems(
+        provenance_path: Path | None,
+        pair_validation_required: bool = False,
+    ) -> list[str]:
+        if provenance_path is None or not provenance_path.exists():
+            return ["Image provenance not found"]
+        try:
+            payload = json.loads(provenance_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return ["Image provenance is invalid"]
+        problems: list[str] = []
+        if (
+            pair_validation_required or payload.get("pair_validation_required")
+        ) and payload.get("pair_validation") is None:
+            problems.append("Required paired image validation is missing")
+        for side in ("left", "right"):
+            metrics = (payload.get(side) or {}).get("asset_metrics")
+            if not isinstance(metrics, dict):
+                problems.append(f"{side.capitalize()} product occupancy metrics are missing")
+                continue
+            occupancy = metrics.get("major_axis_occupancy")
+            if not isinstance(occupancy, (int, float)):
+                problems.append(f"{side.capitalize()} product occupancy metrics are missing")
+            elif occupancy < 0.55:
+                problems.append(f"{side.capitalize()} product subject occupies less than 55% of its source")
+        return problems

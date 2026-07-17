@@ -81,6 +81,7 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
         renderer,
         FFmpegRunner(settings.ffmpeg_bin, settings.ffprobe_bin),
     )
+    image_validator = ReferenceImageValidator(vision_llm)
     return VideoGenerationService(
         output_base=settings.project_root / "output" / "jobs",
         topic_generator=ReferenceTopicGenerator(
@@ -94,7 +95,7 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
         image_service=ReferenceImageService(
             search_provider=search,
             generated_provider=image_provider,
-            validator=ReferenceImageValidator(vision_llm),
+            validator=image_validator,
             max_candidates=3,
         ),
         audio_service=audio_service,
@@ -105,7 +106,7 @@ def build_reference_generation_service(settings: Settings) -> VideoGenerationSer
             QualityService(settings.ffmpeg_bin, settings.ffprobe_bin),
         ),
         image_brief_service=ReferenceImageBriefService(direction_llm),
-        image_validator=None,
+        image_validator=image_validator,
         social_description_writer=SocialDescriptionService(script_llm),
         description_history=get_description_history_service(),
     )

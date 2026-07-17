@@ -8,7 +8,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from PIL import Image
 
-from app.domain.enums import Focus, MascotAnchor, MascotPose, SfxKind
+from app.domain.enums import (
+    Focus,
+    MascotAnchor,
+    MascotPose,
+    MemoryDeviceKind,
+    SfxKind,
+    VisualEventKind,
+)
 from app.domain.models import (
     AbsoluteDirectionCue,
     CaptionCue,
@@ -19,14 +26,75 @@ from app.domain.models import (
     DirectionPlan,
     GenerationRequest,
     GenerationResult,
+    MemoryDevice,
     NarrationBeat,
     ReferenceScriptPackage,
     TimedBeat,
     TimedTranscript,
     TimedWord,
+    VisualEvent,
     RenderResult,
     SoundEffectCue,
 )
+
+
+@pytest.mark.parametrize("kind", list(MemoryDeviceKind))
+def test_reference_script_accepts_each_memory_device_kind(kind: MemoryDeviceKind) -> None:
+    line = "AceeaÈ™i formÄƒ nu Ã®nseamnÄƒ deloc aceeaÈ™i treabÄƒ pentru amÃ¢ndouÄƒ."
+    script = ReferenceScriptPackage(
+        title="Cafea vs ceai",
+        left_item="Cafea",
+        right_item="Ceai",
+        hook="Hook",
+        beats=[NarrationBeat(id="memory", text=line)],
+        closing=ClosingBeat(text="VÄƒ pupÄƒ PufÄƒilÄƒ!", pause_after_ms=500),
+        caption="Cafea sau ceai?",
+        memory_device=MemoryDevice(kind=kind, line=line, beat_id="memory"),
+    )
+
+    assert script.memory_device.kind is kind
+
+
+@pytest.mark.parametrize(
+    ("line", "beat_id", "beat_text", "error"),
+    [
+        ("Doar cinci cuvinte sunt aici.", "memory", "Doar cinci cuvinte sunt aici.", "6-20"),
+        (
+            "Unu doi trei patru cinci È™ase È™apte opt nouÄƒ zece unsprezece doisprezece "
+            "treisprezece paisprezece cincisprezece È™aisprezece È™aptesprezece optsprezece "
+            "nouÄƒsprezece douÄƒzeci douÄƒzeciÈ™iunu.",
+            "memory",
+            "Unu doi trei patru cinci È™ase È™apte opt nouÄƒ zece unsprezece doisprezece "
+            "treisprezece paisprezece cincisprezece È™aisprezece È™aptesprezece optsprezece "
+            "nouÄƒsprezece douÄƒzeci douÄƒzeciÈ™iunu.",
+            "6-20",
+        ),
+        ("AceeaÈ™i formÄƒ nu Ã®nseamnÄƒ deloc aceeaÈ™i treabÄƒ pentru amÃ¢ndouÄƒ.", "missing", "Alt text.", "beat_id"),
+        ("AceeaÈ™i formÄƒ nu Ã®nseamnÄƒ deloc aceeaÈ™i treabÄƒ pentru amÃ¢ndouÄƒ.", "hook", "AceeaÈ™i formÄƒ nu Ã®nseamnÄƒ deloc aceeaÈ™i treabÄƒ pentru amÃ¢ndouÄƒ.", "hook"),
+        ("AceeaÈ™i formÄƒ nu Ã®nseamnÄƒ deloc aceeaÈ™i treabÄƒ pentru amÃ¢ndouÄƒ.", "memory", "AceeaÈ™i formÄƒ pare similarÄƒ, dar treaba diferÄƒ.", "complete sentence"),
+    ],
+)
+def test_reference_script_rejects_invalid_memory_device(
+    line: str,
+    beat_id: str,
+    beat_text: str,
+    error: str,
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        ReferenceScriptPackage(
+            title="Cafea vs ceai",
+            left_item="Cafea",
+            right_item="Ceai",
+            hook="Hook",
+            beats=[NarrationBeat(id="hook", text=beat_text), NarrationBeat(id="memory", text=beat_text)],
+            closing=ClosingBeat(text="VÄƒ pupÄƒ PufÄƒilÄƒ!", pause_after_ms=500),
+            caption="Cafea sau ceai?",
+            memory_device=MemoryDevice(
+                kind=MemoryDeviceKind.REPEATABLE_SENTENCE,
+                line=line,
+                beat_id=beat_id,
+            ),
+        )
 from app.providers.llm.openai_provider import LLMProvider
 from app.providers.tts.base import TTSResult, TTSSettings, TimedWord as ProviderTimedWord
 from app.providers.tts.elevenlabs_provider import ElevenLabsProvider
@@ -37,7 +105,7 @@ from app.services.timeline_compiler import TimelineCompiler
 from app.services.reference_quality_service import ReferenceQualityService
 from app.services.reference_image_validator import ReferenceImageValidator
 from app.services.social_description_service import SocialDescriptionService
-from app.services.video_generation_service import _CheckpointStore
+from app.services.video_generation_service import VideoGenerationService, _CheckpointStore
 import app.services.reference_generation_factory as reference_factory
 
 
@@ -45,7 +113,7 @@ def test_generation_request_defaults_to_romanian_reference_duration() -> None:
     request = GenerationRequest()
 
     assert request.language == "ro"
-    assert request.target_duration_seconds == 25
+    assert request.target_duration_seconds == 30
 
 
 @pytest.mark.parametrize("duration", [19, 61])
@@ -58,6 +126,11 @@ def test_generation_request_accepts_a_60_second_reference_video() -> None:
     request = GenerationRequest(target_duration_seconds=60)
 
     assert request.target_duration_seconds == 60
+
+
+@pytest.mark.parametrize("duration", [20, 25, 60])
+def test_generation_request_preserves_explicit_supported_durations(duration: int) -> None:
+    assert GenerationRequest(target_duration_seconds=duration).target_duration_seconds == duration
 
 
 def test_narration_beat_accepts_only_supported_pause_lengths() -> None:
@@ -76,7 +149,7 @@ def test_reference_script_exposes_exact_spoken_text() -> None:
         hook="Diferența contează",
         beats=[
             NarrationBeat(id="b0", text="Cafeaua acționează rapid.", pause_after_ms=300),
-            NarrationBeat(id="b1", text="Ceaiul este mai blând.", pause_after_ms=0),
+            NarrationBeat(id="b1", text="Ceaiul este mai blând și mai liniștit.", pause_after_ms=0),
         ],
         closing=ClosingBeat(
             id="closing",
@@ -84,6 +157,11 @@ def test_reference_script_exposes_exact_spoken_text() -> None:
             pause_after_ms=500,
         ),
         caption="Cafea sau ceai?",
+        memory_device=MemoryDevice(
+            kind=MemoryDeviceKind.HUMOROUS_CONTRAST,
+            line="Ceaiul este mai blând și mai liniștit.",
+            beat_id="b1",
+        ),
     )
 
     assert script.narration_text.endswith("mai bine nevoilor tale.")
@@ -108,9 +186,14 @@ def test_reference_script_accepts_short_signed_closing() -> None:
         left_item="Coffee",
         right_item="Tea",
         hook="The difference matters",
-        beats=[NarrationBeat(id="b0", text="Coffee acts quickly.")],
+        beats=[NarrationBeat(id="b0", text="Coffee acts quickly while tea waits calmly.")],
         closing=ClosingBeat(id="closing", text="Hugs from Pufăilă!", pause_after_ms=500),
         caption="Coffee or tea?",
+        memory_device=MemoryDevice(
+            kind=MemoryDeviceKind.HUMOROUS_CONTRAST,
+            line="Coffee acts quickly while tea waits calmly.",
+            beat_id="b0",
+        ),
     )
 
     assert script.all_beats[-1].text == "Hugs from Pufăilă!"
@@ -122,13 +205,18 @@ def test_reference_script_all_beats_ends_with_conclusive_closing() -> None:
         left_item="Cafea",
         right_item="Ceai",
         hook="Diferența contează",
-        beats=[NarrationBeat(id="b0", text="Cafeaua acționează rapid.")],
+        beats=[NarrationBeat(id="b0", text="Cafeaua pornește repede, ceaiul așteaptă mai calm.")],
         closing=ClosingBeat(
             id="closing",
             text="Așadar, alege varianta care se potrivește mai bine nevoilor tale.",
             pause_after_ms=500,
         ),
         caption="Cafea sau ceai?",
+        memory_device=MemoryDevice(
+            kind=MemoryDeviceKind.HUMOROUS_CONTRAST,
+            line="Cafeaua pornește repede, ceaiul așteaptă mai calm.",
+            beat_id="b0",
+        ),
     )
 
     assert script.all_beats[-1].id == "closing"
@@ -260,6 +348,7 @@ def test_compiled_video_spec_selects_diferenta_word_for_thumbnail(tmp_path: Path
         duration_seconds=1.7,
     )
 
+    captions = TimelineCompiler().compile_captions(transcript)
     spec = CompiledVideoSpec(
         left_label="Măr verde",
         right_label="Măr roșu",
@@ -267,9 +356,17 @@ def test_compiled_video_spec_selects_diferenta_word_for_thumbnail(tmp_path: Path
         right_image=right,
         narration_audio=audio,
         transcript=transcript,
+        captions=captions,
     )
 
     assert spec.thumbnail_timestamp_seconds == pytest.approx(1.3)
+    thumbnail_caption = next(
+        cue
+        for cue in captions
+        if cue.start <= spec.thumbnail_timestamp_seconds < cue.end
+    )
+    assert thumbnail_caption.words == ["Dar", "care", "e", "diferența?"]
+    assert thumbnail_caption.slot_words == ["Dar", "care", "e", "diferența?"]
 
 
 def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
@@ -309,6 +406,49 @@ def test_generation_result_exposes_reference_artifacts(tmp_path: Path) -> None:
     assert result.render_result.transcript_path == paths["transcript.json"]
     assert result.render_result.cost_report_path == paths["cost.json"]
     assert result.job_id == "job-1"
+
+
+def test_compiled_video_preserves_and_validates_memory_device_words(tmp_path: Path) -> None:
+    left = tmp_path / "left.png"
+    right = tmp_path / "right.png"
+    audio = tmp_path / "audio.wav"
+    for path in (left, right, audio):
+        path.write_bytes(b"asset")
+    line = "Aceeași formă nu înseamnă deloc aceeași treabă."
+    transcript = TimedTranscript(
+        words=[
+            TimedWord(word=word, start=index * 0.1, end=(index + 1) * 0.1)
+            for index, word in enumerate(line.split())
+        ],
+        beats=[TimedBeat(id="memory", start=0.0, end=0.7, pause_end=0.7)],
+        duration_seconds=0.7,
+    )
+    memory_device = MemoryDevice(
+        kind=MemoryDeviceKind.REPEATABLE_SENTENCE,
+        line=line,
+        beat_id="memory",
+    )
+    spec = CompiledVideoSpec(
+        left_label="A",
+        right_label="B",
+        left_image=left,
+        right_image=right,
+        narration_audio=audio,
+        transcript=transcript,
+        memory_device=memory_device,
+    )
+
+    assert spec.model_dump()["memory_device"]["line"] == line
+    assert ReferenceQualityService._memory_device_problems(spec) == []
+
+    changed = spec.model_copy(update={
+        "transcript": transcript.model_copy(update={
+            "words": transcript.words[:-1] + [TimedWord(word="meserie.", start=0.6, end=0.7)]
+        })
+    })
+    assert ReferenceQualityService._memory_device_problems(changed) == [
+        "Memorable line is missing from compiled narration"
+    ]
 
 
 def test_openrouter_request_requires_strict_schema_and_fallbacks() -> None:
@@ -375,7 +515,26 @@ def test_checkpoint_persists_exception_type_when_message_is_empty(tmp_path: Path
     assert state["error"] == "TimeoutError: no details provided"
 
 
-def test_production_pipeline_uses_vision_only_for_search_image_validation(monkeypatch) -> None:
+def test_legacy_script_checkpoint_without_memory_device_is_invalidated(tmp_path: Path) -> None:
+    checkpoint = _CheckpointStore(tmp_path)
+    checkpoint.save("script_verification", {
+        "script": {
+            "title": "A vs B",
+            "left_item": "A",
+            "right_item": "B",
+            "hook": "Hook",
+            "beats": [{"id": "b0", "text": "Old checkpoint text."}],
+            "closing": {"id": "closing", "text": "Hugs from Pufăilă!", "pause_after_ms": 500},
+            "caption": "A or B?",
+        },
+        "verification": {"approved": True},
+    })
+
+    assert VideoGenerationService._load_script_checkpoint(checkpoint) is None
+    assert not checkpoint.completed("script_verification")
+
+
+def test_production_pipeline_shares_vision_validator_for_item_and_pair_validation(monkeypatch) -> None:
     provider = object()
     monkeypatch.setattr(reference_factory, "get_topic_llm_provider", lambda: provider)
     monkeypatch.setattr(reference_factory, "get_llm_provider", lambda: provider)
@@ -399,10 +558,20 @@ def test_production_pipeline_uses_vision_only_for_search_image_validation(monkey
     assert isinstance(service.image_service.validator, ReferenceImageValidator)
     assert service.image_service.validator.llm is provider
     assert service.image_service.max_candidates == 3
-    assert service.image_validator is None
+    assert service.image_validator is service.image_service.validator
     assert isinstance(service.social_description_writer, SocialDescriptionService)
     assert service.social_description_writer.llm is provider
     assert service.description_history is provider
+
+
+def test_structured_pair_brief_requires_an_image_validator() -> None:
+    service = object.__new__(VideoGenerationService)
+    service.image_validator = None
+
+    with pytest.raises(RuntimeError, match="Paired image validation is required"):
+        service._ensure_pair_validation_available(object())
+
+    service._ensure_pair_validation_available(None)
 
 
 def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None:
@@ -449,7 +618,7 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
         hook="Hook",
         beats=[
             NarrationBeat(id="b0", text="unu doi.", pause_after_ms=300),
-            NarrationBeat(id="b1", text="trei patru.", pause_after_ms=0),
+            NarrationBeat(id="b1", text="trei patru cinci șase șapte opt.", pause_after_ms=0),
         ],
         closing=ClosingBeat(
             id="closing",
@@ -457,6 +626,11 @@ def test_beat_tts_offsets_words_and_inserts_exact_pauses(tmp_path: Path) -> None
             pause_after_ms=500,
         ),
         caption="Caption",
+        memory_device=MemoryDevice(
+            kind=MemoryDeviceKind.REPEATABLE_SENTENCE,
+            line="trei patru cinci șase șapte opt.",
+            beat_id="b1",
+        ),
     )
 
     audio_path, transcript = asyncio.run(
@@ -561,7 +735,7 @@ def test_sound_effect_cues_are_four_decibels_louder() -> None:
     assert cue.volume_db == -14.0
 
 
-def test_timeline_compiler_shows_full_phrase_and_highlights_active_word() -> None:
+def test_timeline_compiler_reveals_each_phrase_one_spoken_word_at_a_time() -> None:
     transcript = TimedTranscript(
         words=[
             TimedWord(word="Știi", start=0.0, end=0.2),
@@ -579,19 +753,72 @@ def test_timeline_compiler_shows_full_phrase_and_highlights_active_word() -> Non
 
     captions = TimelineCompiler().compile_captions(transcript)
 
-    phrase = ["Știi", "care", "este", "diferența?"]
     assert [cue.words for cue in captions] == [
-        phrase,
-        phrase,
-        phrase,
-        phrase,
+        ["Știi"],
+        ["Știi", "care"],
+        ["Știi", "care", "este"],
+        ["diferența?"],
         ["Cafeaua"],
     ]
-    assert [cue.active_word_index for cue in captions] == [0, 1, 2, 3, 0]
-    # Each word's highlight window matches its spoken timing.
+    assert [cue.model_dump().get("slot_words") for cue in captions] == [
+        ["Știi", "care", "este"],
+        ["Știi", "care", "este"],
+        ["Știi", "care", "este"],
+        ["diferența?"],
+        ["Cafeaua"],
+    ]
+    assert [cue.active_word_index for cue in captions] == [0, 1, 2, 0, 0]
     assert captions[0].start == 0.0 and captions[0].end == 0.2
     assert captions[1].start == 0.2 and captions[1].end == 0.4
     assert captions[3].start == 0.6 and captions[3].end == 1.3
+
+
+def test_timeline_compiler_limits_caption_chunks_to_four_words_and_24_characters() -> None:
+    transcript = TimedTranscript(
+        words=[
+            TimedWord(word="unu", start=0.0, end=0.1),
+            TimedWord(word="doi", start=0.1, end=0.2),
+            TimedWord(word="trei", start=0.2, end=0.3),
+            TimedWord(word="patru", start=0.3, end=0.4),
+            TimedWord(word="extraordinar", start=0.4, end=0.5),
+            TimedWord(word="memorabil", start=0.5, end=0.6),
+        ],
+        beats=[TimedBeat(id="b0", start=0.0, end=0.6, pause_end=0.6)],
+        duration_seconds=0.6,
+    )
+
+    captions = TimelineCompiler().compile_captions(transcript)
+
+    assert [cue.words for cue in captions] == [
+        ["unu"],
+        ["unu", "doi"],
+        ["unu", "doi", "trei"],
+        ["unu", "doi", "trei", "patru"],
+        ["extraordinar"],
+        ["extraordinar", "memorabil"],
+    ]
+    assert captions[5].words == ["extraordinar", "memorabil"]
+    assert [cue.words[cue.active_word_index] for cue in captions] == [
+        "unu", "doi", "trei", "patru", "extraordinar", "memorabil"
+    ]
+
+
+def test_timeline_compiler_splits_caption_after_punctuation_and_long_pause() -> None:
+    transcript = TimedTranscript(
+        words=[
+            TimedWord(word="Prima.", start=0.0, end=0.1),
+            TimedWord(word="A doua", start=0.1, end=0.2),
+            TimedWord(word="pauză", start=0.51, end=0.7),
+        ],
+        beats=[TimedBeat(id="b0", start=0.0, end=0.7, pause_end=0.7)],
+        duration_seconds=0.7,
+    )
+
+    captions = TimelineCompiler().compile_captions(transcript)
+
+    assert captions[0].words == ["Prima."]
+    assert captions[1].words == ["A doua"]
+    assert captions[2].words == ["pauză"]
 
 
 def test_timeline_compiler_resolves_cues_and_debounces_sfx() -> None:
@@ -634,6 +861,51 @@ def test_timeline_compiler_resolves_cues_and_debounces_sfx() -> None:
     assert compiled.sound_cues[-1].start == pytest.approx(1.0)
 
 
+def test_timeline_compiler_stages_hook_products_on_resolved_words() -> None:
+    transcript = TimedTranscript(
+        words=[
+            TimedWord(word="Frigiderul", start=0.0, end=0.35),
+            TimedWord(word="sau", start=0.8, end=1.0),
+            TimedWord(word="congelatorul?", start=1.35, end=1.8),
+            TimedWord(word="DiferenÈ›a?", start=2.15, end=2.7),
+        ],
+        beats=[TimedBeat(id="hook", start=0.0, end=2.7, pause_end=2.9)],
+        duration_seconds=2.9,
+    )
+    plan = DirectionPlan(cues=[
+        DirectionCue(beat_id="hook", word_index=0, product_focus=Focus.LEFT),
+        DirectionCue(beat_id="hook", word_index=2, product_focus=Focus.RIGHT),
+        DirectionCue(beat_id="hook", word_index=3, product_focus=Focus.BOTH),
+    ])
+
+    compiled = TimelineCompiler().compile(plan, transcript)
+
+    assert [event.kind for event in compiled.visual_events] == [
+        VisualEventKind.REVEAL_LEFT,
+        VisualEventKind.REVEAL_RIGHT,
+        VisualEventKind.SHOW_BOTH,
+    ]
+    assert [event.start for event in compiled.visual_events] == [0.0, 1.35, 2.15]
+    assert all(event.duration_seconds == pytest.approx(0.22) for event in compiled.visual_events)
+
+
+def test_timeline_compiler_falls_back_to_clamped_hook_staging() -> None:
+    transcript = TimedTranscript(
+        words=[TimedWord(word="DiferenÈ›a?", start=0.5, end=1.8)],
+        beats=[TimedBeat(id="hook", start=0.5, end=1.8, pause_end=2.0)],
+        duration_seconds=2.0,
+    )
+
+    compiled = TimelineCompiler().compile(DirectionPlan(), transcript)
+
+    assert [event.kind for event in compiled.visual_events] == [
+        VisualEventKind.REVEAL_LEFT,
+        VisualEventKind.REVEAL_RIGHT,
+        VisualEventKind.SHOW_BOTH,
+    ]
+    assert [event.start for event in compiled.visual_events] == [0.5, 1.2, 1.8]
+
+
 def test_timeline_compiler_rejects_director_word_anchor_outside_beat() -> None:
     transcript = TimedTranscript(
         words=[TimedWord(word="Unu", start=0.0, end=0.3)],
@@ -654,8 +926,15 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
     poster = tmp_path / "poster.jpg"
     contact = tmp_path / "contact.jpg"
     timeline = tmp_path / "timeline.json"
+    provenance = tmp_path / "provenance.json"
     for path in (left, right, audio, video, contact, timeline):
         path.write_bytes(b"asset")
+    provenance.write_text(json.dumps({
+        "left": {"asset_metrics": {"major_axis_occupancy": 0.8}},
+        "right": {"asset_metrics": {"major_axis_occupancy": 0.75}},
+        "pair_validation_required": True,
+        "pair_validation": {"accepted": True},
+    }), encoding="utf-8")
     Image.new("RGB", (1080, 1920), "white").save(poster)
     transcript = TimedTranscript(
         words=[
@@ -682,6 +961,11 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
             CaptionCue(words=["Cafeaua"], active_word_index=0, start=0.0, end=0.4),
             CaptionCue(words=["Cafeaua", "ajută."], active_word_index=1, start=0.4, end=25.0),
         ],
+        visual_events=[
+            VisualEvent(kind=VisualEventKind.REVEAL_LEFT, start=0.0),
+            VisualEvent(kind=VisualEventKind.REVEAL_RIGHT, start=1.2),
+            VisualEvent(kind=VisualEventKind.SHOW_BOTH, start=2.0),
+        ],
     )
     result = RenderResult(
         video_path=video,
@@ -692,6 +976,7 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
         frame_count=750,
         resolution=(1080, 1920),
         scene_count=0,
+        image_provenance_path=provenance,
     )
 
     class FakeMediaQuality:
@@ -718,3 +1003,22 @@ def test_reference_quality_requires_exact_caption_words_and_white_poster(tmp_pat
     ]
     spec.captions[1].words[1] = "greșit"
     assert quality.validate(spec, result) == ["Caption active-word sequence does not match narration"]
+
+
+def test_reference_quality_rejects_incomplete_product_evidence(tmp_path: Path) -> None:
+    provenance = tmp_path / "provenance.json"
+    provenance.write_text(json.dumps({
+        "left": {"asset_metrics": {"major_axis_occupancy": 0.54}},
+        "right": {},
+        "pair_validation_required": True,
+        "pair_validation": None,
+    }), encoding="utf-8")
+
+    assert ReferenceQualityService._provenance_problems(provenance) == [
+        "Required paired image validation is missing",
+        "Left product subject occupies less than 55% of its source",
+        "Right product occupancy metrics are missing",
+    ]
+    assert ReferenceQualityService._provenance_problems(tmp_path / "missing.json") == [
+        "Image provenance not found"
+    ]

@@ -351,19 +351,9 @@ class LLMProvider(BaseLLMProvider):
         schema_name: str,
         temperature: float = 0.0,
         max_tokens: int = 2048,
+        max_repair_attempts: int = 2,
     ) -> ModelT:
         response_format = self._strict_response_format(model_type, schema_name)
-        body = self._build_multimodal_request(
-            system_prompt,
-            user_prompt,
-            image_paths,
-            response_format,
-            temperature,
-            max_tokens,
-        )
-        request_key = hashlib.sha256(
-            json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
-        ).hexdigest()
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -371,25 +361,60 @@ class LLMProvider(BaseLLMProvider):
         if "openrouter.ai" in self._base_url:
             headers["HTTP-Referer"] = "https://localhost:8000"
             headers["X-Title"] = "Automated Short Video Platform"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                f"{self._base_url}/chat/completions",
-                headers=headers,
-                json=body,
+        prompt = user_prompt
+        last_error: Exception | None = None
+        for attempt in range(max_repair_attempts + 1):
+            body = self._build_multimodal_request(
+                system_prompt,
+                prompt,
+                image_paths,
+                response_format,
+                temperature if attempt == 0 else 0.0,
+                max_tokens,
             )
-        if response.status_code == 429 or response.status_code >= 500:
-            record_cost_event(provider=self.name, model=self._model, operation="vision_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
-            raise LLMTransientError(f"Vision model unavailable: {response.status_code}")
-        if response.status_code != 200:
-            record_cost_event(provider=self.name, model=self._model, operation="vision_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
-            raise LLMError(f"LLM API error {response.status_code}: {response.text[:500]}")
-        data = response.json()
-        self._record_usage(data, "vision_completion", request_key)
-        content = data["choices"][0]["message"]["content"]
-        try:
-            return model_type.model_validate_json(self._extract_json(content))
-        except (ValidationError, ValueError, json.JSONDecodeError) as exc:
-            raise LLMRepairError(f"Failed to validate {schema_name}: {exc}") from exc
+            request_key = hashlib.sha256(
+                json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")
+            ).hexdigest()
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    f"{self._base_url}/chat/completions",
+                    headers=headers,
+                    json=body,
+                )
+            if response.status_code == 429 or response.status_code >= 500:
+                record_cost_event(provider=self.name, model=self._model, operation="vision_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
+                raise LLMTransientError(f"Vision model unavailable: {response.status_code}")
+            if response.status_code != 200:
+                record_cost_event(provider=self.name, model=self._model, operation="vision_completion", status="failed", pricing_source="request_failed", error=f"HTTP {response.status_code}", request_key=request_key)
+                raise LLMError(f"LLM API error {response.status_code}: {response.text[:500]}")
+            data = response.json()
+            self._record_usage(data, "vision_completion", request_key)
+            choice = data["choices"][0]
+            content = choice["message"]["content"]
+            try:
+                return model_type.model_validate_json(self._extract_json(content))
+            except (ValidationError, ValueError, json.JSONDecodeError) as exc:
+                last_error = exc
+                if attempt >= max_repair_attempts:
+                    raise LLMRepairError(
+                        f"Failed to validate {schema_name} after {attempt + 1} attempts: {exc}"
+                    ) from exc
+                finish_reason = choice.get("finish_reason") or "unknown"
+                logger.warning(
+                    "Structured vision response failed validation for %s on attempt %d "
+                    "(finish_reason=%s); retrying the same images",
+                    schema_name,
+                    attempt + 1,
+                    finish_reason,
+                )
+                prompt = (
+                    f"{user_prompt}\n\n"
+                    f"Your previous response failed validation: {exc}\n"
+                    f"Previous invalid response: {content}\n"
+                    "Return one complete corrected JSON object satisfying the original schema. "
+                    "Do not omit list fields, and keep every reason and instruction concise."
+                )
+        raise LLMRepairError(f"Failed to validate {schema_name}: {last_error}")
 
     async def complete_json(
         self,

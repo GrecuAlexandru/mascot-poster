@@ -1,0 +1,34 @@
+use_default_settings: true
+
+general:
+  instance_name: "Mascot Poster Local Search"
+
+search:
+  formats:
+    - html
+    - json
+
+categories_as_tabs:
+  general:
+    - general
+  images:
+    - images
+
+server:
+  secret_key: "local-development-only"
+  limiter: false
+  image_proxy: false
+
+engines:
+  - name: bing
+    engine: bing
+    shortcut: bi
+    disabled: false
+  - name: brave
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: google cse
+    disabled: true
+  - name: startpage
+    disabled: true

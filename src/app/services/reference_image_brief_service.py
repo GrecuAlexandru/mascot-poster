@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import unicodedata
+
 from app.domain.models import PairedImageBrief, ProductImageBrief, ResearchPackage, TopicSpec
 
 
@@ -109,6 +111,10 @@ can NEVER be mandatory and can never prove temperature or freshness. Never inven
 difference a real photograph could not show. When two items look nearly identical (two white
 powders, two clear oils), require a truthful source cue or a concise generic label instead of
 leaning on a subtle shade or texture.
+When two complete products have nearly identical closed exteriors, use matching open, cutaway, or
+in-use views that reveal a truthful structural difference. For refrigerator versus freezer, show
+both doors open: refrigerator shelves and crisper drawers versus stacked freezer drawers. Never
+request two closed, featureless exteriors and expect the validator to infer hidden functions.
 
 WORKED EXAMPLES (illustration only; match the pattern, not the exact items)
 
@@ -205,7 +211,97 @@ class ReferenceImageBriefService:
         )
         left = result.left.model_copy(update={"item": topic.comparison_left})
         right = result.right.model_copy(update={"item": topic.comparison_right})
-        return result.model_copy(update={
+        brief = result.model_copy(update={
             "left": observable_image_brief(left),
             "right": observable_image_brief(right),
+        })
+        return self._enforce_appliance_contrast(topic, brief)
+
+    @classmethod
+    def _enforce_appliance_contrast(
+        cls,
+        topic: TopicSpec,
+        brief: PairedImageBrief,
+    ) -> PairedImageBrief:
+        left_kind = cls._appliance_kind(topic.comparison_left)
+        right_kind = cls._appliance_kind(topic.comparison_right)
+        if {left_kind, right_kind} != {"refrigerator", "freezer"}:
+            return brief
+        left = cls._open_appliance_brief(brief.left, left_kind)
+        right = cls._open_appliance_brief(brief.right, right_kind)
+        return brief.model_copy(update={
+            "shared_style": (
+                "matching three-quarter front appliance photos with both doors open, matching "
+                "scale and crop, neutral studio lighting, centered full objects, pure-white background"
+            ),
+            "left": left,
+            "right": right,
+        })
+
+    @staticmethod
+    def _appliance_kind(item: str) -> str:
+        folded = unicodedata.normalize("NFKD", item.casefold())
+        normalized = "".join(character for character in folded if not unicodedata.combining(character))
+        if any(term in normalized for term in ("frigider", "refrigerator", "fridge")):
+            return "refrigerator"
+        if any(term in normalized for term in ("congelator", "freezer")):
+            return "freezer"
+        return ""
+
+    @staticmethod
+    def _open_appliance_brief(
+        brief: ProductImageBrief,
+        kind: str,
+    ) -> ProductImageBrief:
+        prohibited = list(dict.fromkeys([
+            *brief.prohibited_elements,
+            "closed featureless door",
+            "logo",
+            "watermark",
+            "unrelated text",
+        ]))
+        if kind == "refrigerator":
+            return brief.model_copy(update={
+                "exact_subject": (
+                    "an upright refrigerator with its door open, showing organized interior "
+                    "shelves and crisper drawers"
+                ),
+                "search_query_en": "open refrigerator interior shelves crisper drawers",
+                "distinguishing_attributes": [
+                    "open refrigerator compartment with multiple open shelves",
+                    "lower crisper drawers for fresh food storage",
+                    "door-mounted shelves",
+                ],
+                "required_elements": ["open door revealing shelves and crisper drawers"],
+                "prohibited_elements": [
+                    *prohibited,
+                    "stacked freezer drawers as the primary interior",
+                ],
+                "confusing_alternatives": ["upright freezer", "closed appliance cabinet"],
+            })
+        prohibited = [
+            item
+            for item in prohibited
+            if "fresh produce" not in item.casefold()
+            and item.casefold().strip() not in {"packaging", "food packaging"}
+        ]
+        return brief.model_copy(update={
+            "exact_subject": (
+                "an upright freezer with its door open, showing empty stacked transparent "
+                "freezer drawers"
+            ),
+            "search_query_en": "open upright freezer stacked drawers",
+            "distinguishing_attributes": [
+                "open freezer compartment filled with empty stacked freezer drawers",
+                "deep enclosed drawers instead of open refrigerator shelves",
+                "all freezer drawers visibly empty so the internal structure is unmistakable",
+            ],
+            "required_elements": ["open door revealing empty stacked freezer drawers"],
+            "prohibited_elements": [
+                *prohibited,
+                "open refrigerator shelves as the primary interior",
+                "any visible food, produce, bottles, cartons, or food packaging inside the freezer",
+            ],
+            "confusing_alternatives": ["upright refrigerator", "closed appliance cabinet"],
+            "allow_packaging": False,
         })
